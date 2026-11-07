@@ -264,15 +264,20 @@ std::pair<uint16_t,uint32_t> freePlace(const SoundContext::Engine& e){
     uint16_t channel=0;while(e.channels>>channel&1)++channel;
     uint32_t bus=0;while(e.buses>>bus&1)++bus;
     return {channel,bus};}
+// RFC 0025: sounds `prepare` makes on a running instance may take what the memory budget leaves
+// (room; 0: no budget); more is refused before the plugin prepares them.
+template<class F> auto inRoom(PluginHost& h,uint64_t room,F prepare){
+    if(room)h.setMemoryRoom(room);
+    try{auto r=prepare();if(room)h.setMemoryRoom(0);return r;}catch(...){if(room)h.setMemoryRoom(0);throw;}}
 // A node saved with an instance of its own playing a sound of shared engine `e` instead: its snapshot
 // prepared beside the engine's sounds, on the engine's first free channel and bus, its sound selected
-// there now or, with `later`, at the cue. None where the engine has no room (channels, buses, sounds)
-// or the snapshot plays more than one sound (one node has one channel); nothing is left prepared then.
-std::shared_ptr<SoundContext> joinEngine(const std::shared_ptr<SoundContext::Engine>& e,const fs::path& folder,bool later){
+// there now or, with `later`, at the cue. None where the engine has no room (channels, buses, sounds,
+// memory) or the snapshot plays more than one sound (one node has one channel); nothing is left prepared then.
+std::shared_ptr<SoundContext> joinEngine(const std::shared_ptr<SoundContext::Engine>& e,const fs::path& folder,bool later,uint64_t room){
     if(!SoundContext::room(*e))return nullptr;
     auto& h=*e->host;std::set<uint32_t> before;for(const auto& c:h.soundContexts())before.insert(c.id);
     std::array<uint32_t,16> selected;
-    try{selected=h.prepareSnapshot(folder.string());}catch(const std::exception&){return nullptr;}
+    try{selected=inRoom(h,room,[&]{return h.prepareSnapshot(folder.string());});}catch(const std::exception&){return nullptr;}
     const bool one=std::all_of(selected.begin(),selected.end(),[&](uint32_t id){return id==selected[0];});
     for(const auto& c:h.soundContexts())if(!before.count(c.id) && (!one || c.id!=selected[0]))h.discardSound(c.id); // never selected: they go at once
     if(!one)return nullptr;
@@ -823,7 +828,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
     // ports has the node's sounds prepared beside its own; the node takes it over at the cue. Not in an
     // audition, which takes over nothing set aside.
     std::vector<std::unique_ptr<Beside>> beside;
-    auto claim=[&](V node,V plugin,const std::string& key)->std::optional<NodeId>{
+    auto claim=[&](V node,V plugin,const std::string& key,uint64_t room)->std::optional<NodeId>{
         if(keepInstances_)return std::nullopt;
         std::optional<Want> w;
         for(const auto& [n,name]:nodes_){
@@ -835,7 +840,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
             try{checkPorts(field(node,"inputs"),h.inputPorts());checkPorts(field(node,"outputs"),h.outputPorts());}catch(const std::exception&){continue;}
             auto b=std::make_unique<Beside>();b->was=n;b->host=host;
             for(const auto& c:h.soundContexts())if(c.id)b->old.push_back(c.id);
-            try{b->selected=b->host->prepareSnapshot((root/"nodes"/key).string());}
+            try{b->selected=inRoom(*b->host,room,[&]{return b->host->prepareSnapshot((root/"nodes"/key).string());});}
             catch(const std::exception& e){std::fprintf(stderr,"oscairn: %s: its sounds not prepared beside %s's: %s\n",text(field(node,"name")).c_str(),name.c_str(),e.what());continue;}
             for(const auto& c:h.soundContexts())if(c.id && std::find(b->old.begin(),b->old.end(),c.id)==b->old.end())b->fresh.push_back(c.id);
             b->now=next->add(host);origins[b->now]={loaded->second.build,{}}; // not its snapshot byte for byte: never skips a load
@@ -875,12 +880,12 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
         onPlaying.contexts.push_back(context);return context;};
     // A saved engine's sounds (its state, the first node's `engine`) prepared beside a playing engine
     // with room for all its nodes, the sounds no node plays discarded once every node is read.
-    auto claimEngine=[&](V plugin,const std::string& key){
+    auto claimEngine=[&](V plugin,const std::string& key,uint64_t room){
         for(const auto& e:playingEngines(plugin)){
             if(SoundContext::room(*e)<group[key])continue;
             std::set<uint32_t> before;for(const auto& c:e->host->soundContexts())before.insert(c.id);
             std::array<uint32_t,16> selected;
-            try{selected=e->host->prepareSnapshot((root/"nodes"/key/"engine").string());}catch(const std::exception&){continue;}
+            try{selected=inRoom(*e->host,room,[&]{return e->host->prepareSnapshot((root/"nodes"/key/"engine").string());});}catch(const std::exception&){continue;}
             for(const auto& c:e->host->soundContexts())if(!before.count(c.id))onPlaying.sounds.push_back({e->host,c.id});
             claimedEngines[key]={e,selected};return true;}
         return false;};
@@ -934,8 +939,8 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
             std::shared_ptr<SoundContext> joined;bool first=false; // formed on their own
             if(!siblings && !shared && formable(node,key)){
                 const auto version=text(field(plugin,"version"));
-                for(const auto& e:engines)if(sameKind(*e,id,path,version) && (joined=joinEngine(e,root/"nodes"/key,false)))break;
-                if(!joined)for(const auto& e:playingEngines(plugin))if((joined=joinEngine(e,root/"nodes"/key,true))){onPlaying.contexts.push_back(joined);onPlaying.sounds.push_back({e->host,joined->own()});++reused;break;}
+                for(const auto& e:engines)if(sameKind(*e,id,path,version) && (joined=joinEngine(e,root/"nodes"/key,false,room)))break;
+                if(!joined)for(const auto& e:playingEngines(plugin))if((joined=joinEngine(e,root/"nodes"/key,true,room))){onPlaying.contexts.push_back(joined);onPlaying.sounds.push_back({e->host,joined->own()});++reused;break;}
                 first=!joined && kinds[kind(plugin)]>1;}
             if(siblings){if(!definitions.contains(engine) || text(field(definitions.at(engine),"engine"))!=engine || !ids.contains(engine))bad("missing shared engine root");
                 const auto& source=next->host(ids.at(engine)).descriptor();if(source.id!=id || source.path!=path)bad("incompatible shared engine identity");
@@ -945,7 +950,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
                 catch(const std::exception& e){
                     if(memoryRefusal(e))throw;
                     runtime=next->add(standIn(node,root/"nodes"/key,refs[key],std::string("its shared engine is not here: ")+e.what()));restored=false;}}
-            else if(shared && claimEngine(plugin,key)){runtime=next->add(claimedSound(node,key));restored=true;++reused;}
+            else if(shared && claimEngine(plugin,key,room)){runtime=next->add(claimedSound(node,key));restored=true;++reused;}
             else if(shared){
                 runtime=resolvePlugin(node,root/"nodes"/key,refs[key],[&](const std::string& p,const std::string& i){return next->add(p,i,room);},[&](NodeId n){next->remove(n);},
                                       [&](NodeId n){return next->host(n).descriptor().version;},[&](std::shared_ptr<PluginHost> h){return next->add(std::move(h));});
@@ -958,7 +963,7 @@ std::unique_ptr<Session::Prepared> Session::read(const fs::path& root,std::vecto
                     context->engine()->build=buildDigest(host->descriptor().path);engines.push_back(context->engine());
                     restored=true;}}
             else if(joined){runtime=next->add(joined);restored=true;}
-            else if(const auto b=group[key]==1?claim(node,plugin,key):std::nullopt){runtime=*b;++reused;restored=true;first=false;} // one instance, its sounds selected at the cue
+            else if(const auto b=group[key]==1?claim(node,plugin,key,room):std::nullopt){runtime=*b;++reused;restored=true;first=false;} // one instance, its sounds selected at the cue
             else if(const auto engine=playing(id,path,text(field(plugin,"version")),group[key])){runtime=context(graph_.host(*engine),[&]{return next->addEffectContext(graph_,*engine);});++reused;}
             else if(const auto f=group[key]==1?take(plugin,key):std::nullopt){
                 runtime=next->add(free[*f].host);origins[runtime]={free[*f].loaded.build,source(key)};++reused;restored=true;
@@ -1350,7 +1355,7 @@ std::map<std::string,NodeId> Session::addNodes(const json_value_s* document,cons
                     const auto host=graph_.node(n).host;const auto* c=dynamic_cast<const SoundContext*>(host.get());
                     const auto& d=host->descriptor();if(d.id!=id || d.path!=text(field(plugin,"pathHint")) || d.version!=text(field(plugin,"version")))continue;
                     const auto e=c?c->engine():[&]{const auto t=SoundContext::lead(host);return t && SoundContext::room(*t)?lead(n):nullptr;}();
-                    if(e && (joined=joinEngine(e,snapshot,false)))break;}
+                    if(e && (joined=joinEngine(e,snapshot,false,memoryRoom())))break;}
             if(siblings){if(!ids.count(engine))bad("missing shared engine root");
                 try{runtime=shared?adopt(unique(name),savedSound(node,snapshot,nullptr,&graph_.host(ids.at(engine)))):addEffectContext(unique(name),ids.at(engine));}
                 catch(const std::exception& e){if(memoryRefusal(e))throw;runtime=adopt(unique(name),standIn(node,snapshot,refs[key],std::string("its shared engine is not here: ")+e.what()));}}

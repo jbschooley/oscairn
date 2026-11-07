@@ -136,6 +136,22 @@ int main(int argc, char** argv)
             for(const auto& w : s.sessionStatus().workers) most = std::max(most, w.memory);
             check(most >= uint64_t(128) << 20, "their eight sounds in one worker, " + mib(most));
         }
+        // With an 80 MiB budget, parts share the instance until the next sound's 16 MiB do not fit.
+        {
+            Session s(48000, frames);
+            const auto first = s.add("Part 1", synth, id);
+            s.connectAudio(first, graphOutput); s.commit();
+            s.setBudget({.9, uint64_t(80) << 20});
+            int shared = 0; std::string why;
+            for(int i = 2; i <= 8 && why.empty(); ++i)
+                try { s.shareInstrument("Part " + std::to_string(i), first); ++shared; } catch(const std::exception& e) { why = e.what(); }
+            s.commit();
+            std::array<float, frames> l{}, r{}; float* out[2]{l.data(), r.data()};
+            for(int i = 0; i < 30; ++i) { s.service(); s.process(out, frames); std::this_thread::sleep_for(std::chrono::milliseconds(10)); }
+            check(shared >= 1 && shared < 7 && why.find("Plugin needs 16 MiB of memory where") != std::string::npos,
+                  "a part past the memory budget does not share the instance, after " + std::to_string(shared) + ": " + why);
+            check(s.sessionStatus().failures.empty(), "and the instance plays on");
+        }
     }
     catch(const std::exception& e) { check(false, e.what()); }
     std::filesystem::remove_all(folder);

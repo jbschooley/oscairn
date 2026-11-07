@@ -397,7 +397,9 @@ other:
   covers every sound the state holds, and each sound prepared after activating (`prepare`,
   `prepare_preset`, or a snapshot's sounds prepared beside) costs its context bytes, so report
   one sound's memory as `context_bytes` (the Oscairn Analog counts the state's other sounds in
-  `shared_bytes`).
+  `shared_bytes`). The host refuses a prepare whose context bytes are more than the memory the
+  budget leaves, before calling the plugin ("Plugin needs N MiB of memory where M MiB is
+  left"), and a snapshot whose prepared sounds' bytes are, discarding them again.
 - `current`, after activating, says what the plugin holds. The host requires it but does not
   use it for budgets yet; it counts its own measurement.
 

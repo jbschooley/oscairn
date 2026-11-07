@@ -147,7 +147,11 @@ namespace oscairn
         if( !engine ) { const auto id = addInstance(name, plugin.path, plugin.id); first(id); return id; }
         uint16_t channel = 0; while( engine->channels >> channel & 1 ) ++channel;
         uint32_t bus = 0; while( engine->buses >> bus & 1 ) ++bus;
-        const auto sound = engine->host->prepareSound(name.empty() ? plugin.name : name, {{engine->busParameter, double(bus)}});
+        const auto room = memoryRoom(); // RFC 0025: its sound may take what the budget leaves
+        if( room ) engine->host->setMemoryRoom(room);
+        uint32_t sound;
+        try { sound = engine->host->prepareSound(name.empty() ? plugin.name : name, {{engine->busParameter, double(bus)}}); } catch(...) { if( room ) engine->host->setMemoryRoom(0); throw; }
+        if( room ) engine->host->setMemoryRoom(0);
         std::shared_ptr<SoundContext> context;
         try { context = std::make_shared<SoundContext>(engine, channel, bus, sound); } catch(...) { engine->host->discardSound(sound); throw; }
         const auto id = graph_.add(context);

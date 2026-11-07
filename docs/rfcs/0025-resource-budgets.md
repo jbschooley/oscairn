@@ -203,17 +203,23 @@ raises the worker's limit for a prepare before sending it, for one sound, or for
 context for a snapshot's sounds prepared beside (the plugin alone reads how many it holds),
 then refits to the sounds made; the same credibility cap applies with them counted. Before
 this, the limit stayed at what activation set, and a shared Oscairn Analog instance filling
-with sounds (RFC 0021 slice 3) was stopped at its 9th. With a memory room set, the CLAP host
-refuses a prepare whose context bytes do not fit before calling the plugin, and a snapshot
-whose prepared sounds' bytes do not, discarding them, with activation's reason ("Plugin needs
-96 MiB of memory where 40 MiB is left"); the worker plays on. Not built: the session sets no
-room around preparing sounds yet, and a snapshot's sounds are checked against the room only
-once prepared, since only the plugin can count them. `control-worker-sound-memory` checks it
-with a test build of the Basic Synth holding and declaring 16 MiB a sound, in workers: seven
+with sounds (RFC 0021 slice 3) was stopped at its 9th. Admission: with a memory budget, the
+session gives a shared instance the room the budget leaves when a part joins it (sharing a part,
+a Performance or Sound whose parts join a playing or forming instance, sounds prepared beside for
+the cue), as it does at activation; the budget counts the instance's first part at its
+declaration and each other part at its context bytes. The CLAP host refuses a prepare whose
+context bytes do not fit before calling the plugin, and a snapshot whose prepared sounds' bytes
+do not, discarding them, with activation's reason ("Plugin needs 96 MiB of memory where 40 MiB
+is left"); the worker plays on, and a part refused while a Performance loads gets an instance
+of its own, admitted as any other. Not built: a snapshot's sounds are checked against the room
+only once prepared, since only the plugin can count them. `control-worker-sound-memory` checks
+it with a test build of the Basic Synth holding and declaring 16 MiB a sound, in workers: seven
 sounds and a six-sound snapshot prepared where activation set the limit for one (both stopped
 at 89 MB without the change), a sound and a snapshot past the room refused and the worker
-alive, a plugin holding 100 MiB more per sound than it declares still stopped, and eight parts
-sharing one instance. With `OSCAIRN_RELIABILITY`
+alive, a plugin holding 100 MiB more per sound than it declares still stopped, eight parts
+sharing one instance, and under an 80 MiB budget a part refused once its sound no longer fits
+(all seven shared without the change). The Performance paths are run by the shared-parts tests
+without a budget only. With `OSCAIRN_RELIABILITY`
 `instrument` or `pass-through` (the app sets it from its profile; workers inherit it), the engine
 and every worker call `mlockall(MCL_CURRENT | MCL_FUTURE)` at start (`MCL_FUTURE` only under
 an unlimited `RLIMIT_MEMLOCK`; see "Locking") and set `oom_score_adj`:
