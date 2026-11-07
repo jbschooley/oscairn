@@ -18,7 +18,7 @@ control API ([RFC 0003](0003-control-api.md)), the library
 Checked when built and tested; the sections below say how.
 
 - [x] 1. In-process actions: the registry; Library picks (Performances and Sounds), Setlist takes Performances
-- [ ] 2. Apps as processes: started and supervised by the engine, actions over the control API, manifests
+- [ ] 2. Apps as processes: started and supervised by the shell, actions over the control API, manifests
 - [ ] 3. Choice and defaults
 - [ ] 4. Permissions and limits enforced per app
 - [ ] 5. Apps in packages: signed builds, install, update, removal, data folders
@@ -81,15 +81,18 @@ timing still belongs in event plugins, and the UI is now several apps under one 
   build for the devices (and others as RFC 0006's [platform builds](0006-packages-and-portability.md#platform-builds-and-hardware)
   require). It is written in anything that can speak the control protocol; the C++ client
   (`LocalClient`, and the desktop's `Engine` facade for JUCE apps) is what Oscairn's own use.
-- **The engine starts it** when the shell asks (Home's tile, an action, a product button), after
-  admitting its memory reservation (RFC 0025's `memory.launch`, which the shell already
-  asks). The engine is the supervisor because it already supervises plugin workers (RFC 0010),
-  owns the cgroup subtree apps go into ([RFC 0025](0025-resource-budgets.md#linux)) and
-  outlives every UI. The shell stays the system UI ([RFC 0030](0030-system-shell-launcher-and-navigation.md#the-shell-and-the-launcher)):
+- **The shell starts it** (Home's tile, an action, a product button), after the engine admits
+  its memory reservation (RFC 0025's `memory.launch`, which the shell already asks). The shell
+  is the supervisor, decided 2026-11-07 so apps survive an engine restart: it already starts the
+  engine and reconnects when it drops, so it outlives the engine; it applies the limits the
+  engine's admission grants (the cgroup subtree apps go into is delegated to it,
+  [RFC 0025](0025-resource-budgets.md#linux)). The shell stays the system UI ([RFC 0030](0030-system-shell-launcher-and-navigation.md#the-shell-and-the-launcher)):
   it decides which app is in front and where it draws, and is not itself an app.
-- **Its connection is handed to it:** the engine makes a socket pair, adopts one end as a
-  client with the app's grants (`LocalServer::adopt` exists for this), and passes the other to
-  the app as an inherited descriptor (`OSCAIRN_CONTROL_FD`). The app never sees the user's
+- **Its connection is handed to it:** the shell asks the engine for a connection with the app's
+  grants; the engine makes a socket pair, adopts one end as a client with them
+  (`LocalServer::adopt` exists for this), and passes the other to the shell, which gives it to
+  the app as an inherited descriptor (`OSCAIRN_CONTROL_FD`) at start, and over a Unix socket
+  (`SCM_RIGHTS`) after an engine restart, when the app's library reconnects and resyncs. The app never sees the user's
   control socket, so the engine always knows which app is on which connection.
 - **Its UI on the desktop** is its own windows, as any program's. The shell's Apps menu and
   Home window start it and bring it forward; a pick opens as the answering app's own window over
@@ -202,8 +205,8 @@ what only apps do:
 ### Containment
 
 Third-party app code is untrusted. A crash, a hang, a leak or a flood of requests from an app
-must never reach the sound, the engine or another app. The engine supervises apps as it does
-plugin workers ([RFC 0010](0010-plugin-worker-isolation.md#failure-handling)), off the audio
+must never reach the sound, the engine or another app. The shell supervises apps as the engine
+does plugin workers ([RFC 0010](0010-plugin-worker-isolation.md#failure-handling)), off the audio
 path:
 
 - **Crash:** seen by the process exiting or its socket closing. The shell shows a banner
@@ -250,7 +253,7 @@ path:
   folder included); and a seccomp filter refusing `ptrace`, mounts and network sockets without
   `network`. Namespaces (as bubblewrap, which Flatpak uses) where the image's kernel allows
   them, not relied on.
-- **macOS:** the engine starts the app under a sandbox profile of its own, as RFC 0010 plans
+- **macOS:** the shell starts the app under a sandbox profile of its own, as RFC 0010 plans
   for workers, with the same grants. Which mechanism, and whether it holds for a GUI app
   started this way, is checked in step 6. The App Sandbox's entitlements are chosen by whoever
   signs the app, so Oscairn cannot impose them. Until step 6, permissions on the desktop hold
@@ -410,7 +413,7 @@ has to say *which*.
 | Step | Deliverable | Gate |
 | --- | --- | --- |
 | 1. In-process actions | The registry and requests inside the desktop app; Library pick and Setlist send between the built-in apps | From the Setlist app, fill a slot through the Library's pick; from the Library, send a Performance to the setlist |
-| 2. Apps as processes | The engine starting an app from its manifest with a connected socket; `apps.request`, `apps.answer`, the `apps` topic; supervision: restart, the hang rule, the memory limit, stderr captured; the Setlist app as its own executable | The same two flows with the Setlist app in a separate process; the Setlist app killed, hung and leaking memory in turn: each time sound goes on, the shell says what happened, the app comes back, its stderr is in its log |
+| 2. Apps as processes | The shell starting an app from its manifest with a connection the engine grants; `apps.request`, `apps.answer`, the `apps` topic; supervision: restart, the hang rule, the memory limit, stderr captured; the Setlist app as its own executable | The same two flows with the Setlist app in a separate process; the Setlist app killed, hung and leaking memory in turn: each time sound goes on, the shell says what happened, the app comes back, its stderr is in its log |
 | 3. Choice and defaults | Two apps offering one action; the chooser and its setting | A second setlist app answers once chosen, and the choice is kept |
 | 4. Permissions and limits | Grants per connection from the manifest; rate limits; file paths refused to apps | A test app granted Library only is refused `graph` and `params` with the permission named; one flooding requests is slowed, then disconnected, while another client's controls keep their timing |
 | 5. Packages | App builds in archives and repositories, signed; install, update and removal; the data folder | An unsigned app asks before install; an update applies only once the app is closed, and one that fails to start is rolled back; removal keeps its data unless asked |
