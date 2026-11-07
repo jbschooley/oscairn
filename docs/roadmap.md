@@ -235,7 +235,9 @@ in the others.
 2. **Native sample patches** ([sample players and formats](sample-players-and-formats.md),
    [ESP observations](yamaha-esp-samples-research.md)). The Legacy Sampler lives in its own
    repository, [oscairn/sampler](https://github.com/oscairn/sampler), since October 31, 2026
-   (like the FM and analog engines' forks), fetched at a pinned commit.
+   (like the FM and analog engines' forks), fetched at a pinned commit for the tests only. Since
+   November 6, 2026 it is deprecated and no longer bundled with the desktop app or the OS image;
+   it can be built from its repository and installed by hand.
    - [x] first slice: one-region SFZ patches over preloaded WAV with shared PCM, held-note
      ownership, desktop import and samples saved as Performance dependencies
      ([RFC 0008 step 2](rfcs/0008-sfz-native-samples-and-conversion.md#step-2-status)),

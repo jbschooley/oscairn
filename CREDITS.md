@@ -84,7 +84,7 @@ authoritative.
   not vendored source. Retain its notices in any distributed binary/image. The Legacy Sampler
   itself (AGPL-3.0-or-later) is in its own repository,
   [oscairn/sampler](https://github.com/oscairn/sampler), which Oscairn builds at a pinned
-  commit.
+  commit for its tests only; neither is in the desktop app or the OS image.
 
 ## Archives
 

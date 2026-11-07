@@ -25,19 +25,18 @@ target_compile_definitions(oscairn_midi_delay PRIVATE OSCAIRN_MIDI_DELAY=1)
 
 # The Oscairn Legacy Sampler (org.oscairn.legacy-sampler, oscairn-legacy-sampler.clap; deprecated
 # in favor of the sfizz-based Oscairn Sampler) lives in its own repository
-# (github.com/oscairn/sampler), fetched at a pinned commit; it decodes WAV assets with libsndfile
-# (LGPL-2.1-or-later). To build a local checkout instead, set
-# FETCHCONTENT_SOURCE_DIR_OSCAIRN_SAMPLER. The OS image builds it from its Buildroot package,
-# which must name the same commit.
-set(OSCAIRN_SAMPLER_COMMIT 5c7c420d5466a9f167f8c67e95a29b578b22f911)
-file(STRINGS "${PROJECT_SOURCE_DIR}/os/buildroot/package/oscairn-legacy-sampler/oscairn-legacy-sampler.mk" sampler_version REGEX "^OSCAIRN_LEGACY_SAMPLER_VERSION = ")
-if(NOT sampler_version STREQUAL "OSCAIRN_LEGACY_SAMPLER_VERSION = ${OSCAIRN_SAMPLER_COMMIT}")
-    message(FATAL_ERROR "The Legacy Sampler's commit differs between plugins/CMakeLists.txt and os/buildroot/package/oscairn-legacy-sampler")
+# (github.com/oscairn/sampler); it decodes WAV assets with libsndfile (LGPL-2.1-or-later). It is
+# no longer shipped: only the tests use it, so it is fetched at a pinned commit when they are built,
+# and not installed. To build a local checkout instead, set FETCHCONTENT_SOURCE_DIR_OSCAIRN_SAMPLER.
+if(BUILD_TESTING)
+    set(OSCAIRN_SAMPLER_COMMIT 5c7c420d5466a9f167f8c67e95a29b578b22f911)
+    include(FetchContent)
+    FetchContent_Declare(oscairn_sampler GIT_REPOSITORY https://github.com/oscairn/sampler.git GIT_TAG ${OSCAIRN_SAMPLER_COMMIT} EXCLUDE_FROM_ALL)
+    FetchContent_MakeAvailable(oscairn_sampler)
+    # EXCLUDE_FROM_ALL drops its install rule; the target still builds with the rest.
+    set_target_properties(oscairn_sampler PROPERTIES EXCLUDE_FROM_ALL OFF
+        LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}) # beside the other plugins
 endif()
-include(FetchContent)
-FetchContent_Declare(oscairn_sampler GIT_REPOSITORY https://github.com/oscairn/sampler.git GIT_TAG ${OSCAIRN_SAMPLER_COMMIT})
-FetchContent_MakeAvailable(oscairn_sampler)
-set_target_properties(oscairn_sampler PROPERTIES LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}) # beside the other plugins
 
 # Modular instrument (plugins/modular): downloads JUCE.
 if(OSCAIRN_MODULAR OR OSCAIRN_STANDALONE)

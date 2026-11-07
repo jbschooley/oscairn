@@ -119,8 +119,9 @@ RFC 0008 step 3 (the Salamander piano: 641 regions in 12 groups, FLAC, streaming
 | Region model | `Region.cpp` (1,920 lines) built on sfizz's internal types. | `loader.hh` `Region`, tied to its synth. | Do not import; implement only the profile's opcodes. |
 | Streaming | `FilePool` (about 1,100 lines): preloaded starts of each sample, a background loader, reader pins. Built on sfizz's audio buffers/readers, a real-time semaphore, spin mutex, `atomic_queue` and SIMD helpers. | Background loader thread with a process-wide cache keyed by filename (see above). | Follow `FilePool`'s design in Oscairn's own code; it is not separable as files. |
 
-FLAC decoding comes from libsndfile, which Oscairn already uses; the device build needs
-libsndfile's FLAC/Ogg support enabled first (it is built with `--disable-external-libs`).
+FLAC decoding comes from libsndfile, which the Legacy Sampler already uses; the device build needs
+libsndfile's FLAC/Ogg support enabled first (it is built with `--disable-external-libs`). (Since
+2026-11-06 the Legacy Sampler is no longer bundled, and the OS image no longer selects libsndfile.)
 
 FluidSynth's [dynamic sample-loading setting](https://www.fluidsynth.org/api/settings_synth.html)
 can allocate during preset changes and is documented as unsuitable for real-time use.

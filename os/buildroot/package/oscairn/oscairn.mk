@@ -11,11 +11,10 @@ OSCAIRN_SITE_METHOD = local
 OSCAIRN_OVERRIDE_SRCDIR_RSYNC_EXCLUSIONS = --exclude '/build*' --exclude '/demo'
 OSCAIRN_LICENSE = AGPL-3.0-or-later
 OSCAIRN_LICENSE_FILES = LICENSE
-OSCAIRN_DEPENDENCIES = host-pkgconf libsndfile oscairn-legacy-sampler
-# The Legacy Sampler comes from its own package: nothing is downloaded while building.
-OSCAIRN_CONF_OPTS += \
-	-DFETCHCONTENT_SOURCE_DIR_OSCAIRN_SAMPLER=$(OSCAIRN_LEGACY_SAMPLER_SRCDIR) \
-	-DFETCHCONTENT_FULLY_DISCONNECTED=ON
+OSCAIRN_DEPENDENCIES = host-pkgconf
+# Nothing is downloaded while building; without tests (Buildroot passes BUILD_TESTING=OFF) the
+# Legacy Sampler is not fetched.
+OSCAIRN_CONF_OPTS += -DFETCHCONTENT_FULLY_DISCONNECTED=ON
 
 ifeq ($(BR2_PACKAGE_OSCAIRN_LV2),y)
 OSCAIRN_DEPENDENCIES += lilv

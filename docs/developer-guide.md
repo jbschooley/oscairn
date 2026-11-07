@@ -60,9 +60,9 @@ build-dev/hosts/oscairn-render reference.wav --seconds 4 \
 
 The first configure fetches the [Legacy Sampler](https://github.com/oscairn/sampler), which lives in its own repository, at the
 commit pinned in `plugins/CMakeLists.txt`, so it needs network access and libsndfile (with
-pkg-config). To build a local checkout of it instead, add
-`-DFETCHCONTENT_SOURCE_DIR_OSCAIRN_SAMPLER=path/to/sampler`; a new pin also goes in
-`os/buildroot/package/oscairn-legacy-sampler`, which the configure step checks.
+pkg-config). Only the tests use it; it is not bundled or installed. `-DBUILD_TESTING=OFF` skips it
+and the tests that need it. To build a local checkout of it instead, add
+`-DFETCHCONTENT_SOURCE_DIR_OSCAIRN_SAMPLER=path/to/sampler`.
 The renderer writes an offline WAV; it does not open an audio device. Socket tests need
 permission to bind local sockets. For live output build the [desktop/helper](../hosts/README.md).
 For LV2 add `-DOSCAIRN_LV2=ON` and install Lilv/LV2 development packages as described in

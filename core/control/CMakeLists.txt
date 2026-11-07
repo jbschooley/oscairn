@@ -184,18 +184,20 @@ set(switch_timeout 120)
 if(CMAKE_CXX_FLAGS MATCHES "-fsanitize")
     set(switch_timeout 600)
 endif()
-add_executable(oscairn-setlist-change-test tests/setlist_change.cpp)
-target_include_directories(oscairn-setlist-change-test PRIVATE ../clap-host/tests)
-target_link_libraries(oscairn-setlist-change-test PRIVATE oscairn_control)
-add_test(NAME control-setlist-change COMMAND oscairn-setlist-change-test
-    $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn_sampler> $<TARGET_FILE:oscairn_delay>)
-set_tests_properties(control-setlist-change PROPERTIES TIMEOUT ${switch_timeout})
-add_executable(oscairn-performance-switch-test tests/performance_switch.cpp)
-target_include_directories(oscairn-performance-switch-test PRIVATE ../clap-host/tests)
-target_link_libraries(oscairn-performance-switch-test PRIVATE oscairn_control)
-add_test(NAME control-performance-switch COMMAND oscairn-performance-switch-test
-    $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn_sampler> $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:kick-clap-fixture-normal>)
-set_tests_properties(control-performance-switch PROPERTIES TIMEOUT ${switch_timeout})
+if(BUILD_TESTING) # the Legacy Sampler
+    add_executable(oscairn-setlist-change-test tests/setlist_change.cpp)
+    target_include_directories(oscairn-setlist-change-test PRIVATE ../clap-host/tests)
+    target_link_libraries(oscairn-setlist-change-test PRIVATE oscairn_control)
+    add_test(NAME control-setlist-change COMMAND oscairn-setlist-change-test
+        $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn_sampler> $<TARGET_FILE:oscairn_delay>)
+    set_tests_properties(control-setlist-change PROPERTIES TIMEOUT ${switch_timeout})
+    add_executable(oscairn-performance-switch-test tests/performance_switch.cpp)
+    target_include_directories(oscairn-performance-switch-test PRIVATE ../clap-host/tests)
+    target_link_libraries(oscairn-performance-switch-test PRIVATE oscairn_control)
+    add_test(NAME control-performance-switch COMMAND oscairn-performance-switch-test
+        $<TARGET_FILE:oscairn_basic_synth> $<TARGET_FILE:oscairn_sampler> $<TARGET_FILE:oscairn_delay> $<TARGET_FILE:kick-clap-fixture-normal>)
+    set_tests_properties(control-performance-switch PROPERTIES TIMEOUT ${switch_timeout})
+endif()
 if(Python3_Interpreter_FOUND)
     add_test(NAME control-performance-format COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/performance.py"
         $<TARGET_FILE:oscairn-json-rpc-test> $<TARGET_FILE:oscairn_basic_synth>)
@@ -220,8 +222,11 @@ set(control_worker_tests
     "control-sound-presets|oscairn-sound-presets-test|$<TARGET_FILE:oscairn_basic_synth>"
     "control-shared-parts|oscairn-shared-parts-test|$<TARGET_FILE:oscairn_basic_synth>"
     "control-json-audio|oscairn-json-rpc-test|$<TARGET_FILE:oscairn_basic_synth>"
-    "control-performance|oscairn-performance-test|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn_delay>|$<TARGET_FILE:oscairn_step_sequencer>|$<TARGET_FILE:kick-clap-fixture-normal>"
-    "control-performance-switch|oscairn-performance-switch-test|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn_sampler>|$<TARGET_FILE:oscairn_delay>|$<TARGET_FILE:kick-clap-fixture-normal>")
+    "control-performance|oscairn-performance-test|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn_delay>|$<TARGET_FILE:oscairn_step_sequencer>|$<TARGET_FILE:kick-clap-fixture-normal>")
+if(BUILD_TESTING) # the Legacy Sampler
+    list(APPEND control_worker_tests
+        "control-performance-switch|oscairn-performance-switch-test|$<TARGET_FILE:oscairn_basic_synth>|$<TARGET_FILE:oscairn_sampler>|$<TARGET_FILE:oscairn_delay>|$<TARGET_FILE:kick-clap-fixture-normal>")
+endif()
 if(UNIX)
     list(APPEND control_worker_tests
         "control-native-sounds|oscairn-local-socket-test|$<TARGET_FILE:oscairn_basic_synth>|--sounds"

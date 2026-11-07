@@ -8,7 +8,9 @@ is recorded; step 2 is implemented as the Oscairn Legacy Sampler with the baseli
 Note, 2026-11-06: the Sampler built in step 2 is now the Oscairn Legacy Sampler
 (`org.oscairn.legacy-sampler`), deprecated. The later steps build on the sfizz-based Oscairn
 Sampler (`org.oscairn.sampler`, [oscairn/sfizz](https://github.com/oscairn/sfizz)), which plays
-multisample SFZ and is where RFC 0013's engine is being built.
+multisample SFZ and is where RFC 0013's engine is being built. The Legacy Sampler is no longer
+bundled with the desktop app or the OS image; it can be built from
+[oscairn/sampler](https://github.com/oscairn/sampler) and installed by hand.
 
 ## Progress
 

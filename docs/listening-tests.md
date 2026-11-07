@@ -47,6 +47,10 @@ Earlier automated/live telemetry checks are not a substitute for this response.
 Also the first interactive run of the desktop import; automated tests cover the model code
 behind it, not the JUCE menu, file chooser or button state.
 
+The Legacy Sampler is no longer bundled with the app. To repeat these checks, build it from
+[oscairn/sampler](https://github.com/oscairn/sampler) and put `oscairn-legacy-sampler.clap` in a
+CLAP plugin folder, where the plugin scan finds it.
+
 - [x] Replace the synth with **Oscairn Legacy Sampler** in the plugin browser. **Prepare...** is
   enabled and offers **Import sample or SFZ...** only. *October 30: works from the default
   graph. After the shared-effects setup, replace refuses with "Incompatible audio buses;

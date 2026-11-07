@@ -18,6 +18,8 @@ option(OSCAIRN_LV2 "Enable LV2 hosting (requires Lilv and LV2 development packag
 set(OSCAIRN_LV2_EXAMPLE_DIR "" CACHE PATH "Optional upstream LV2 example bundles for integration tests")
 set(OSCAIRN_LV2_SOURCE_DIR "" CACHE PATH "Optional LV2 source checkout for unmodified eg-sampler Worker tests")
 
+# Off skips the tests that use the deprecated Legacy Sampler, and the Legacy Sampler itself.
+option(BUILD_TESTING "Build the tests that need the Legacy Sampler" ON)
 enable_testing()
 
 add_subdirectory(core)
