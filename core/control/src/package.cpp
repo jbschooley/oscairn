@@ -88,6 +88,24 @@ namespace oscairn
         return platforms.count(name) != 0;
     }
 
+    std::string pluginFolderName(const std::string& id, const std::string& version)
+    {
+        std::string safe;
+        for(const char c : id + "@" + version) safe += (std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '-' || c == '@' || c == '_') ? c : '_';
+        return safe;
+    }
+
+    std::vector<fs::path> pluginStoreFolders()
+    {
+        std::vector<fs::path> out;
+        std::error_code e;
+        for(const auto* format : {"clap", "lv2"})
+            for(const auto& entry : fs::directory_iterator(dataHome() / "Plugins" / format, e))
+                if(entry.path().filename().string()[0] != '.' && fs::is_directory(entry.path() / platform(), e)) out.push_back(entry.path() / platform());
+        std::sort(out.begin(), out.end());
+        return out;
+    }
+
     std::string bundleDigest(const fs::path& build)
     {
         if(fs::is_regular_file(build)) return assets::sha256File(build);
@@ -247,7 +265,7 @@ namespace oscairn
                 if(!signing::verify(p.signature, signing::archiveMessage(manifest))) bad("its signature does not verify");
             }
             p.id = text(detail::member(d, "id")); p.name = text(detail::member(d, "name")); p.kind = text(detail::member(d, "kind"));
-            if(!plainId(p.id) || (p.kind != "library" && p.kind != "performance" && p.kind != "sound")) bad("its ID or kind is wrong");
+            if(!plainId(p.id) || (p.kind != "library" && p.kind != "performance" && p.kind != "sound" && p.kind != "plugin")) bad("its ID or kind is wrong");
             const V items = detail::member(d, "items");
             if(!items || items->type != json_type_array) bad("it lists no items");
             std::set<std::string> ids;
@@ -291,6 +309,8 @@ namespace oscairn
                 }
                 p.plugins.push_back(std::move(plugin));
             }
+            // A plugin package carries plugin builds and nothing else.
+            if(p.kind == "plugin" && (!p.items.empty() || p.plugins.empty())) bad("a plugin package holds plugins and no items");
             // Every file's SHA-256, as the manifest lists it, and each build's digest.
             const V files = detail::member(d, "files");
             if(!files || files->type != json_type_object) bad("it lists no files");

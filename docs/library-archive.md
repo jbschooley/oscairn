@@ -1,6 +1,6 @@
 # Library archive format, version 3
 
-A library, or an exported Performance, is one archive file
+A library, an exported Performance or Sound, or a plugin package is one archive file
 ([RFC 0021](rfcs/0021-sounds-performances-and-library.md#libraries)): a zip holding
 
 | Entry | What it is |
@@ -19,7 +19,7 @@ The manifest:
 | `format`, `version` | Exactly `oscairn.library` and integer `3` |
 | `id` | The library's ID: its folder's name when installed as a library, and what imported copies record as their `origin`; 1 to 64 letters, digits, `.`, `-` and `_`, the first one a letter or digit and the last not a `.` |
 | `name` | Its name |
-| `kind` | `library`, `performance` for an exported Performance or `sound` for an exported Sound (its ID and name are that item's) |
+| `kind` | `library`, `performance` for an exported Performance, `sound` for an exported Sound (its ID and name are that item's), or `plugin` for a [plugin package](#plugin-packages): plugin builds and no items. Any other kind is refused |
 | `items` | Each item's `kind` (`performance` or `sound`), `id` (as plain as the library's: an exported item's ID is its archive's), `name`, `path`, its folder in the archive, and `signatures` (optional) |
 | `plugins` | Each plugin's `format`, `id`, `version`, `name` and `builds`: each build's `platform` (such as `macos-arm64` or `linux-arm64`), `path` in the archive, `sha256`, its digest as a [Performance's lock](performance-format.md) gives it, and `signatures` (optional) |
 | `files` | Every other entry's SHA-256, by its path |
@@ -34,6 +34,28 @@ added with `plugins.addBuild`). Only CLAP plugins go in: LV2 plugins are install
 outside their bundles), so an LV2 plugin, like one not on this device, is left out, and
 the export says which.
 
+## Plugin packages
+
+A plugin package carries plugins without Sounds or Performances: `kind` is `plugin`, `items`
+is empty and `plugins` lists at least one plugin, each with its builds as in any archive, under
+the same signature rules. Its ID and name are the package's; `oscairn-sign plugin-package`
+names it after its plugin:
+
+```sh
+oscairn-sign plugin-package --key author.key Organ.olib clap com.example.organ 2.1.0 "Example Organ" \
+    macos-arm64=build/mac/Organ.clap linux-arm64=build/linux/Organ.clap
+```
+
+It packs each build with the signatures in `<build>.sig` beside it, refusing one that is not
+over that build, and with `--key` signs the whole archive. Installing one puts every build of
+each of its plugins into the [plugin store](#the-plugin-store), whether or not anything uses
+them yet, and adds no items: there is no choice of a locked library or the user's own storage.
+
+Apps are to be packaged the same way ([RFC 0022](rfcs/0022-apps-and-requests.md) step 2): a
+kind of their own, `app`, with an `apps` list beside `plugins`, each app signed as
+[RFC 0006](rfcs/0006-packages-and-portability.md#signatures) describes. Not built: a reader
+refuses the kind until then.
+
 ## Reading one
 
 An archive is untrusted. Reading extracts it into a new folder of its own, refusing, and leaving
@@ -47,7 +69,8 @@ nothing behind:
   64 MiB, as declared; and a
   file that extracts to another size than it declares;
 - a manifest that is not version 3 (there is no reader for version 2), whose ID or an item's
-  is not plain (as `id` above says), or names an item whose folder or document is not there, or
+  is not plain (as `id` above says), whose kind is not one above, a plugin package that lists an
+  item or no plugin, or that names an item whose folder or document is not there, or
   whose document's ID is not the one listed, or a plugin build not under `Plugins/`, not there,
   or for a platform other than `linux-arm64`, `linux-x86_64`, `macos-arm64`, `macos-x86_64` and
   `windows-x86_64`, or whose path is not a `.clap` or `.lv2` bundle (the store finds builds by
@@ -109,7 +132,8 @@ its contents at once.
 - **Samples** go into the user's sample library (RFC 0009) by their hash either way, so they stay
   when a library is uninstalled. A sample an item needs that is in neither the archive nor the
   device is reported.
-- **Plugins:** every build of each plugin the installed items use goes into the plugin store,
+- **Plugins:** every build of each plugin the installed items use, or of each plugin in a
+  plugin package, goes into the plugin store,
   each whole or not at all, so this device can pass the others on in its own exports (a desktop
   carrying a device's builds). A Performance whose plugin is not at its `pathHint` finds this
   device's build there. A build already there with the same digest is left; a different one is
@@ -125,6 +149,8 @@ its contents at once.
 `Plugins/<format>/<id>@<version>/` in the data folder (characters other than letters, digits,
 `.`, `-`, `@` and `_` made `_`) holds `plugin.json`, `{format, id, version, name}`, as the folder
 name cannot say them exactly, and a folder per platform with its build: `macos-arm64/Odin2.clap`.
+The desktop's plugin scan looks in each plugin's folder for its own platform, so what an
+archive installed is found there.
 `plugins.list` shows each plugin with the library items that use it; removing one is refused
 while the open Performance plays it, and what used it opens with a stand-in until it is back.
 

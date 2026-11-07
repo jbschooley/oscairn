@@ -158,6 +158,20 @@ int main()
             fs::remove(root / "Good.olib");
         }
         refuse("version 2",{{"library.json", std::string(manifest).replace(manifest.find("\"version\":3"), 11, "\"version\":2")}, sound});
+        // A plugin package: plugin builds and no items.
+        {
+            const auto onlyPlugin = root / "plugin-only";
+            write(onlyPlugin / build / "Contents/binary", "code");
+            Package plugin; plugin.id = "synth"; plugin.name = "Synth"; plugin.kind = "plugin";
+            plugin.plugins = {{"clap", "synth", "1", "Synth", {{platform(), build, bundleDigest(onlyPlugin / build)}}}};
+            writePackage(root / "Plugin.olib", plugin, onlyPlugin);
+            const auto got = readPackage(root / "Plugin.olib", root / "plugin-out");
+            check(got.kind == "plugin" && got.items.empty() && got.plugins.size() == 1 && fs::exists(root / "plugin-out" / build / "Contents/binary"), "a plugin package round-trips");
+            auto pluginKind = [&](std::string m) { return m.replace(m.find("\"kind\":\"library\""), 16, "\"kind\":\"plugin\""); };
+            refuse("a plugin package with items", {{"library.json", pluginKind(withBuild(bundleDigest(staged / build)))}, sound, {binary, "code"}});
+            refuse("a plugin package with no plugins", {{"library.json", R"({"format":"oscairn.library","version":3,"id":"abc","name":"Pack","kind":"plugin","items":[],"plugins":[],"files":{}})"}});
+            refuse("an app package, not built yet", {{"library.json", std::string(manifest).replace(manifest.find("\"kind\":\"library\""), 16, "\"kind\":\"app\"")}, sound});
+        }
 
         // Signatures (RFC 0006): an item, a build and the whole archive, each verified on reading.
         const auto mine = signing::makeKey(root / "mine.key"), other = signing::makeKey(root / "other.key");

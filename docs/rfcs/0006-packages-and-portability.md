@@ -34,7 +34,10 @@ Checked when built and tested; the sections below say how.
       **Signature** (Not signed by default, a key, or Make a key...), the archive's signer named
       in the install dialog, and the keys by name and fingerprint in **Settings**;
       `control-signing`, `control-package`, `control-archives`, `control-library`,
-      `desktop-gaps`. Not yet: re-judging store builds
+      `desktop-gaps`; plugin packages, archives of kind `plugin` carrying plugin builds and no
+      items, packed by `oscairn-sign plugin-package`, installed into the store under the same
+      rules and listed under Plugins in the install dialog, 2026-11-06, `control-package`,
+      `control-archives`, `desktop-gaps`. Not yet: re-judging store builds
       when a key is revoked, revocations through system updates, a product profile refusing
       unsigned code, apps (not packaged yet), trusting a key from the install prompt, repositories
       requiring signatures, pairing)
@@ -166,7 +169,8 @@ another, each `{key, signature}` (the signer's public key and the signature, in 
   signature without being able to make one. The same build re-signed by its vendor later (a new
   key) gets another entry; nothing in the bundle changes.
 - **App signature: who made this app?** Apps are not packaged yet
-  ([RFC 0022](0022-apps-and-requests.md) step 2). When they are, each app in the manifest
+  ([RFC 0022](0022-apps-and-requests.md) step 2). When they are, an archive of kind `app`
+  carries them as a plugin package (kind `plugin`) carries plugin builds, and each app in the manifest
   carries `signatures` over `oscairn-app-1\0` + its ID, version and digest, each NUL-terminated,
   and is judged for install as a plugin build is, against keys trusted for `apps`. The install
   check already takes each code component's kind, so an app is one more entry in it.

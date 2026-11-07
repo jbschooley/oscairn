@@ -323,13 +323,35 @@ int main(int argc, char** argv)
                     const auto view = install.view.getBoundsInParent(), go = install.go.getBoundsInParent(), cancel = install.cancel.getBoundsInParent(), code = install.code.getBoundsInParent();
                     bool inList = install.items.size() == 40, fullRows = true;
                     for(auto* b : install.items) { inList = inList && b->getParentComponent() == &install.list; fullRows = fullRows && b->getHeight() == 30; }
-                    check(install.getHeight() <= 630 && install.view.getViewedComponent() == &install.list && inList && fullRows && install.list.getHeight() == 26 + 40 * 30 && view.getHeight() < install.list.getHeight(),
+                    check(install.getHeight() <= 630 && install.view.getViewedComponent() == &install.list && inList && fullRows && install.list.getHeight() == 26 + 40 * 30 + 4 + 26 + 30 && view.getHeight() < install.list.getHeight(),
                           "the items scroll in a viewport, every row full height");
+                    check(install.headings.size() == 2 && install.headings[1]->getText() == "Plugins" && install.plugins.size() == 1 && install.plugins[0]->getParentComponent() == &install.list &&
+                              install.plugins[0]->getText() == "Synth 1.0 (macos-arm64): Not signed" && install.plugins[0]->getBounds().getY() == 26 + 40 * 30 + 4 + 26,
+                          "under Plugins, after the items, each build with who signed it: " + install.plugins[0]->getText().toStdString());
                     check(install.getLocalBounds().contains(go) && install.getLocalBounds().contains(cancel) && view.getBottom() <= code.getY() && code.getBottom() <= go.getY() && install.go.getButtonText() == "Install anyway",
                           "the warning and the buttons stay in view below the items");
                     const auto image = install.createComponentSnapshot(install.getLocalBounds());
                     check(image.getPixelAt(2, 2) == standalone::ink(standalone::Ink::Background), "the dialog paints the theme's background");
                     snapshot(install, "install-many");
+                }
+                // A plugin package: its builds under Plugins, each with its signer, and no choice of
+                // how to install, since it has no items.
+                {
+                    Control::Archive plugin = signedArchive;
+                    plugin.kind = "plugin"; plugin.items.clear();
+                    Control::Signer trusted; trusted.name = "Synth"; trusted.version = "2.0"; trusted.platform = "macos-arm64"; trusted.status = "trusted"; trusted.key = made.id; trusted.keyName = "Maker";
+                    Control::Signer revoked = trusted; revoked.platform = "linux-arm64"; revoked.status = "revoked";
+                    plugin.code = {trusted, revoked};
+                    standalone::InstallChoices install(plugin);
+                    standalone::setDesktopMode(install, 1); install.resized();
+                    std::vector<std::string> shown;
+                    for(auto* c : install.list.getChildren()) if(auto* l = dynamic_cast<juce::Label*>(c)) shown.push_back(l->getText().toStdString());
+                    const auto print = standalone::fingerprint(made.id).toStdString();
+                    const std::vector<std::string> want{"Plugins", "Synth 2.0 (macos-arm64): Signed by Maker (" + print + "), a key you trust",
+                                                        "Synth 2.0 (linux-arm64): Signed by Maker (" + print + "), which is revoked, not installed"};
+                    check(shown == want && install.pluginPackage && install.items.isEmpty() && !install.own.isVisible() && !install.locked.isVisible() && install.go.getButtonText() == "Install",
+                          "a plugin package lists its plugins under Plugins with their signers, without a choice of how: " + (shown.size() > 1 ? shown[1] : std::string()));
+                    snapshot(install, "install-plugin");
                 }
                 // An archive of both kinds, mixed: its Performances under one heading, then its
                 // Sounds under another, in the archive's order, no kind after a name; still all ticked.

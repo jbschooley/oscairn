@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 //
 // oscairn-sign: package signatures (RFC 0006) for plugin authors and publishers. Makes a key,
-// signs a plugin build (a .sig beside it, which an export carries), signs an archive whole, and
+// signs a plugin build (a .sig beside it, which an export carries), packs builds into a plugin
+// package, signs an archive whole, and
 // checks an archive's signatures, and signs and checks a repository's files (RFC 0031). A private
 // key is never printed.
 #include "oscairn/package.h"
 #include "oscairn/signing.h"
 #include <cstdio>
 #include <fstream>
+#include <memory>
 #include <random>
 #include <string>
 
@@ -25,6 +27,10 @@ namespace
                    "      sign a plugin build, adding the signature to <build>.sig beside it\n"
                    "  oscairn-sign archive <key-file> <archive.olib>\n"
                    "      sign an archive whole (library.sig), replacing any signature over it\n"
+                   "  oscairn-sign plugin-package [--key <key-file>] <archive.olib> <format> <id> <version> <name> <platform>=<build>...\n"
+                   "      pack plugin builds, each with the signatures in <build>.sig beside it, into a\n"
+                   "      plugin package (an archive with no items) named by the plugin's ID; with\n"
+                   "      --key, signed whole\n"
                    "  oscairn-sign verify [--into <folder>] <archive.olib>\n"
                    "      check every signature and hash in an archive and say who signed what;\n"
                    "      <folder>, which must not exist yet, is where it is unpacked to check (default: a\n"
@@ -82,6 +88,43 @@ int main(int argc, char** argv)
             const auto k = signing::loadKey(a[1]);
             signPackage(a[2], k);
             std::printf("signed %s by %s\n", a[2].c_str(), signing::keyId(k.publicKey).c_str());
+            return 0;
+        }
+        if(a.size() >= 7 && a[0] == "plugin-package")
+        {
+            std::vector<std::string> rest(a.begin() + 1, a.end());
+            std::unique_ptr<signing::Key> key;
+            if(rest[0] == "--key") { key = std::make_unique<signing::Key>(signing::loadKey(rest[1])); rest.erase(rest.begin(), rest.begin() + 2); }
+            if(rest.size() < 6) return usage();
+            Package p;
+            p.kind = "plugin"; p.id = rest[2]; p.name = rest[4];
+            Package::Plugin plugin{rest[1], rest[2], rest[3], rest[4], {}};
+            std::random_device random;
+            const auto staged = fs::temp_directory_path() / ("oscairn-pack-" + std::to_string(random()) + std::to_string(random()));
+            struct Gone { fs::path p; ~Gone() { std::error_code e; fs::remove_all(p, e); } } gone{staged};
+            for(size_t i = 5; i < rest.size(); ++i)
+            {
+                const auto equals = rest[i].find('=');
+                if(equals == std::string::npos) return usage();
+                const auto forPlatform = rest[i].substr(0, equals);
+                const fs::path build = rest[i].substr(equals + 1);
+                if(!knownPlatform(forPlatform)) throw std::runtime_error("unknown platform " + forPlatform);
+                if(!fs::exists(build)) throw std::runtime_error("no build " + build.string());
+                const auto digest = bundleDigest(build);
+                auto signatures = signing::readSignatures(build.string() + ".sig");
+                for(const auto& s : signatures)
+                    if(!signing::verify(s, signing::buildMessage(plugin.format, plugin.id, plugin.version, forPlatform, digest)))
+                        throw std::runtime_error("a signature in " + build.string() + ".sig is not over this build");
+                const auto inside = fs::path("Plugins") / plugin.format / pluginFolderName(plugin.id, plugin.version) / forPlatform / build.filename();
+                fs::create_directories((staged / inside).parent_path());
+                fs::copy(build, staged / inside, fs::copy_options::recursive);
+                plugin.builds.push_back({forPlatform, inside.generic_string(), digest, signatures});
+            }
+            p.plugins.push_back(plugin);
+            writePackage(rest[0], p, staged, key.get());
+            try { readPackage(rest[0], {}); } catch(...) { fs::remove(rest[0]); throw; } // its ID, format and bundles as a reader takes them
+            std::printf("packed %s %s %s with %zu builds%s\n", plugin.format.c_str(), plugin.id.c_str(), plugin.version.c_str(), plugin.builds.size(),
+                        key ? (", signed by " + signing::keyId(key->publicKey)).c_str() : "");
             return 0;
         }
         if(a.size() >= 2 && a[0] == "verify" && (a.size() == 2 || (a.size() == 4 && a[1] == "--into")))

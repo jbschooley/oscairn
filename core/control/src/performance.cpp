@@ -159,10 +159,7 @@ std::vector<Session::LockEntry> readLock(V d){
 }
 // The plugin store (RFC 0006): installed plugin builds by format, ID and version, apart from
 // any one Performance; empty when that build is not there.
-std::string storeName(const std::string& id,const std::string& version){
-    std::string safe;for(const char c:id+"@"+version)safe+=(std::isalnum(static_cast<unsigned char>(c)) || c=='.' || c=='-' || c=='@' || c=='_')?c:'_';
-    return safe;
-}
+std::string storeName(const std::string& id,const std::string& version){return pluginFolderName(id,version);}
 fs::path storeFolder(const std::string& format,const std::string& id,const std::string& version){return dataHome()/"Plugins"/format/storeName(id,version);}
 // A plugin's builds in the store by platform: <folder>/<platform>/<bundle>, beside plugin.json.
 std::map<std::string,fs::path> storedBuilds(const std::string& format,const std::string& id,const std::string& version){
@@ -1899,6 +1896,8 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
         std::vector<Package::Item> items;
         for(const auto& id:chosen)if(std::none_of(p.items.begin(),p.items.end(),[&](const auto& i){return i.id==id;}))bad("no item "+id+" in that archive");
         for(const auto& i:p.items)if(chosen.empty() || std::find(chosen.begin(),chosen.end(),i.id)!=chosen.end())items.push_back(i);
+        const bool pluginPackage=p.kind=="plugin"; // its plugins and nothing else, whatever asLibrary says
+        if(pluginPackage)asLibrary=false;
         // On a case-insensitive file system an ID differing only in case names another library's
         // folder: never two libraries in one, which rescan would list as neither.
         if(asLibrary){std::error_code e;for(const auto& entry:fs::directory_iterator(l.libraries(),e))
@@ -1910,6 +1909,7 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
         // before anything is installed: code unsigned or by an unknown key only when the user said
         // yes, a revoked key's never. Apps join this when archives carry them (RFC 0022 step 2).
         std::set<std::tuple<std::string,std::string,std::string>> used;
+        if(pluginPackage)for(const auto& plugin:p.plugins)used.insert({plugin.format,plugin.id,plugin.version});
         for(const auto& i:items){
             const auto bytes=state_files::read(manifest(i),4*1024*1024);
             const std::unique_ptr<json_value_s,decltype(&std::free)> doc{json_parse(bytes.data(),bytes.size()),&std::free};
@@ -1966,7 +1966,7 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
             }
             // Listed only once its items are all there.
             writeAtomically(root/"library.json",manifestJson(p));
-        }else{
+        }else if(!pluginPackage){
             // The user's own, under new IDs: Sounds first, so the Performances that came with them point at their copies.
             std::map<std::string,std::string> ids; // the archive's item ID -> the copy's
             std::stable_sort(items.begin(),items.end(),[](const auto& a,const auto& b){return a.kind=="sound" && b.kind!="sound";});

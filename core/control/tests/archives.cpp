@@ -432,6 +432,43 @@ int main(int argc, char** argv)
             check(installed.added == 1 && installed.code.at(0).status == "revoked" && installed.notes.size() == 1 && installed.notes[0].find("revoked") != std::string::npos &&
                   !fs::exists(temp.path / "j" / "Plugins"), "a revoked key's build is refused even with a yes, and noted");
         }
+        // Device P: a plugin package, packed by oscairn-sign from a signed build, carries the plugin
+        // and no items; it installs into the store, where a plugin scan looks, under the same
+        // signature rules, and never as a library.
+        {
+            device(temp.path / "p");
+            const auto author = temp.path / "author.key";
+            const auto build = temp.path / "p-build" / "Synth.clap";
+            fs::create_directories(build.parent_path());
+            fs::copy_file(fixture, build);
+            check(run(tool + " build " + shell(author) + " clap org.kick.test.synth " + shell(version) + " " + platform() + " " + shell(build)).first == 0, "the build is signed");
+            const auto package = temp.path / "Synth.olib";
+            const auto packed = run(tool + " plugin-package --key " + shell(author) + " " + shell(package) + " clap org.kick.test.synth " + shell(version) + " 'KICK Synth' " + platform() + "=" + shell(build));
+            check(packed.first == 0 && packed.second.find("with 1 builds, signed by " + signing::keyId(authorKey)) != std::string::npos, "oscairn-sign packs a plugin package: " + packed.second);
+            const auto wrongPlatform = run(tool + " plugin-package " + shell(temp.path / "Wrong.olib") + " clap org.kick.test.synth " + shell(version) + " Synth " + other + "=" + shell(build) + " 2>&1");
+            check(wrongPlatform.first != 0 && wrongPlatform.second.find("not over this build") != std::string::npos && !fs::exists(temp.path / "Wrong.olib"),
+                  "a build whose signature is for another platform is not packed: " + wrongPlatform.second);
+            const auto read = readPackage(package, {});
+            check(read.kind == "plugin" && read.items.empty() && read.plugins.size() == 1 && read.plugins[0].name == "KICK Synth" && read.signature.key == authorKey &&
+                  read.plugins[0].builds.at(0).signatures.at(0).key == authorKey, "it holds the plugin, the build's signature and the whole archive's");
+            Session p(48000, 64);
+            const auto contents = p.archiveContents(package.string());
+            check(contents.kind == "plugin" && contents.items.empty() && contents.code.size() == 1 && contents.code[0].name == "KICK Synth" && contents.code[0].status == "unknown",
+                  "its contents list the build it adds, by a key not trusted here");
+            std::string why; try { p.installArchive(package.string(), true); } catch(const std::exception& e) { why = e.what(); }
+            check(why.find("by an unknown key") != std::string::npos && !fs::exists(temp.path / "p" / "Plugins"), "refused without a yes, installing nothing: " + why);
+            p.setTrustedKey({"", authorKey, "Author", {"plugins"}});
+            const auto installed = p.installArchive(package.string(), true);
+            check(installed.added == 0 && installed.notes.empty() && installed.code.size() == 1 && installed.code[0].status == "trusted", "installed once its key is trusted");
+            const auto listed = p.installedPlugins();
+            check(listed.size() == 1 && listed[0].name == "KICK Synth" && listed[0].platforms == std::vector<std::string>{platform()} && listed[0].usedBy.empty(),
+                  "its build is in the store, used by nothing yet");
+            const auto folders = pluginStoreFolders();
+            check(folders.size() == 1 && fs::exists(folders[0] / "Synth.clap") && fs::exists(folders[0] / "Synth.clap.sig"), "where a plugin scan looks, with its signature beside it");
+            check(p.libraries().empty() && !fs::exists(temp.path / "p" / "Libraries" / read.id), "asked as a library, it is not one");
+            p.add("synth", (folders[0] / "Synth.clap").string(), "org.kick.test.synth"); p.commit();
+            check(p.sessionStatus().failures.empty() && p.graphState().topology.nodes.size() == 1, "the installed build plays");
+        }
         // A build path without its .clap or .lv2: the store keeps bundles by extension, so such a
         // build installs into the store and is never found again. readPackage refuses it.
         {

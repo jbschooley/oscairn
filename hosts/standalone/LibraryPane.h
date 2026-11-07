@@ -32,9 +32,11 @@ namespace oscairn::standalone
     /// The export's choices in a dialog over `over`; `start` gets them when Export is pressed.
     void showExport(Engine& engine, juce::Component* over, const juce::String& title, bool performance, std::function<void(bool editedSounds, const std::string& key)> start);
     /// An archive's install choices: locked or as the user's own, and which items, all ticked,
-    /// under a heading for each kind there is (Performances, then Sounds); who signed it and any
-    /// plugin builds from an unknown source or a revoked key (RFC 0006). The items scroll; the
-    /// options above and the buttons below stay in view.
+    /// under a heading for each kind there is (Performances, then Sounds); under Plugins, each
+    /// plugin build it adds to the store with who signed it; who signed the archive, and a warning
+    /// for builds from an unknown source or a revoked key (RFC 0006). A plugin package holds only
+    /// plugins, so it offers no choice of how. The list scrolls; the options above and the
+    /// buttons below stay in view.
     class InstallChoices : public juce::Component
     {
     public:
@@ -45,7 +47,9 @@ namespace oscairn::standalone
         juce::Component list;
         juce::OwnedArray<juce::Label> headings; // in list, over each kind's items
         juce::OwnedArray<juce::ToggleButton> items;
+        juce::OwnedArray<juce::Label> plugins;  // in list, under the Plugins heading: each build and its signer
         std::vector<std::string> ids;
+        bool pluginPackage = false;
         juce::TextButton go{"Install"}, cancel{"Cancel"};
         bool asks = false; // installing says yes to code from an unknown source
         void paint(juce::Graphics&) override;

@@ -128,7 +128,9 @@ blobs/<ab>/<sha256>        package files: manifests, items, samples, plugin buil
 ### Package files
 
 A release is published as a library archive ([format](../library-archive.md)), signed as
-RFC 0006 says. The repository stores it in pieces, each named by its hash:
+RFC 0006 says. A package that carries only plugins is a
+[plugin package](../library-archive.md#plugin-packages) (kind `plugin`, no items); apps are to
+be another kind of the same archive. The repository stores it in pieces, each named by its hash:
 
 - the archive's manifest (`library.json`) and its signature (`library.sig`);
 - each item folder, as one zip;

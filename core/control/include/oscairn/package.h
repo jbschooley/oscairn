@@ -24,7 +24,9 @@ namespace oscairn
         struct Build { std::string platform, path, sha256; std::vector<signing::Signature> signatures = {}; };
         struct Plugin { std::string format, id, version, name; std::vector<Build> builds; };
         std::string id, name;
-        std::string kind = "library"; // "library", or "performance" for an exported Performance
+        // "library"; "performance" or "sound" for an exported item; "plugin" for a plugin package,
+        // which holds plugin builds and no items. Apps are to be another kind, with their own list.
+        std::string kind = "library";
         std::vector<Item> items;
         std::vector<Plugin> plugins;
         std::map<std::string, std::string> files; // each file's SHA-256 by its path; filled by writePackage
@@ -41,6 +43,12 @@ namespace oscairn
     // A platform plugin builds are kept for: linux-arm64, linux-x86_64, macos-arm64, macos-x86_64
     // or windows-x86_64. It names a folder in the plugin store, so nothing else is accepted.
     bool knownPlatform(const std::string& name);
+    // A plugin's folder in the plugin store and in archives, "<id>@<version>" with characters other
+    // than letters, digits, '.', '-', '@' and '_' made '_'.
+    std::string pluginFolderName(const std::string& id, const std::string& version);
+    // This platform's build folder of each plugin in the store (Plugins/<format>/<id>@<version>/<platform>
+    // in the data folder), where a plugin scan finds what archives installed.
+    std::vector<std::filesystem::path> pluginStoreFolders();
     // A plugin build's digest: a file's SHA-256, or for a bundle (a folder), the SHA-256 of each
     // file's path and SHA-256 in path order. Hidden files (a component starting with '.') are not
     // part of a build and are left out, as archives leave them out.

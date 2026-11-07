@@ -22,7 +22,9 @@ You need `oscairn-sign`, built with Oscairn (`cmake --build build --target oscai
 
    ```sh
    oscairn-sign build ~/oscairn/publisher.key clap com.example.organ 2.1.0 linux-arm64 Organ.clap
-   # export the library archive (it carries Organ.clap.sig), then:
+   # a plugin alone: pack the signed builds into a plugin package, signed whole
+   oscairn-sign plugin-package --key ~/oscairn/publisher.key com.example.organ-2.1.0.olib clap com.example.organ 2.1.0 "Example Organ" linux-arm64=Organ.clap
+   # or export the library archive (it carries Organ.clap.sig), then:
    oscairn-sign archive ~/oscairn/publisher.key com.example.organ-2.1.0.olib
    oscairn-sign verify com.example.organ-2.1.0.olib
    ```

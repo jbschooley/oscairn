@@ -54,7 +54,7 @@ def main(tool):
             digest = out.stdout.split()[5]
             inside = f"Plugins/clap/{plugin}@2.1.0/linux-arm64/Organ.clap"
             manifest = {
-                "format": "oscairn.library", "version": 3, "id": plugin, "name": "Example Organ", "kind": "library",
+                "format": "oscairn.library", "version": 3, "id": plugin, "name": "Example Organ", "kind": "plugin",
                 "items": [],
                 "plugins": [{"format": "clap", "id": plugin, "version": "2.1.0", "name": "Example Organ", "builds": [
                     {"platform": "linux-arm64", "path": inside, "sha256": digest,

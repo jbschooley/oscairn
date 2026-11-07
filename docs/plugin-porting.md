@@ -622,6 +622,9 @@ What changes for the plugin:
   the `.sig` beside the bundle: exports carry it. Re-sign after every rebuild; a signature over
   another build is left out. Publish your key's ID (shown by `oscairn-sign key`) so users can
   check it. `oscairn-sign verify archive.olib` lists who signed what in an archive.
+  To ship the plugin alone, `oscairn-sign plugin-package --key author.key MyPlugin.olib clap
+  <id> <version> <name> <platform>=MyPlugin.clap...` packs your signed builds into a
+  [plugin package](library-archive.md#plugin-packages), which installs them into the store.
   To publish to Oscairn's package repository, sign the archive too and follow
   [Publishing a package](developer-guide.md#publishing-a-package).
 - **Installing code:** a device installs a build signed by a key its trust store trusts for

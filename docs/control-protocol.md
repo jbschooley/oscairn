@@ -1081,7 +1081,8 @@ use.
 
 ### Libraries
 
-Libraries come as [archives](library-archive.md): a library, or an exported Performance.
+Libraries come as [archives](library-archive.md): a library, an exported Performance or Sound,
+or a plugin package (`kind` `plugin`: plugin builds and no items).
 
 - `library.contents` takes `{file}` and returns `{id,name,kind,items,code,signer}`, each item's `kind`,
   `id` and `name`. `code` is each plugin build it would add to the store (not one already
@@ -1103,7 +1104,8 @@ Libraries come as [archives](library-archive.md): a library, or an exported Perf
   samples they use go into the user's sample library, and the builds of the plugins they use,
   every platform's, into the plugin store; `notes` names any sample that is in neither the
   archive nor the device, a plugin with no build for this device, and a different build of one
-  already installed (kept).
+  already installed (kept). A plugin package installs every build of each of its plugins, takes
+  no `items` and adds none (`added` is 0), whatever `asLibrary` says.
 - `library.libraries` (`{}`) returns `{libraries}`, each `{id,name,items}`.
 - `plugins.list` (`{}`) returns `{plugins}`: the plugin store ([RFC 0006](rfcs/0006-packages-and-portability.md)),
   each `{format,id,version,name,platforms,bytes,usedBy,open}`: the platforms it has builds for,

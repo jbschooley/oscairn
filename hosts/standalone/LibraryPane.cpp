@@ -128,23 +128,29 @@ namespace oscairn::standalone
                 b->setToggleState(true, juce::dontSendNotification); list.addAndMakeVisible(b); ids.push_back(i.id);
             }
         }
+        // The plugin builds it adds to the store, each with who signed it.
+        if(!a.code.empty()) list.addAndMakeVisible(headings.add(new juce::Label({}, "Plugins")));
+        for(const auto& c : a.code)
+            list.addAndMakeVisible(plugins.add(new juce::Label({}, text(c.name + " " + c.version + " (" + c.platform + "): ") + describeSigner(c) + (c.status == "revoked" ? ", not installed" : ""))));
+        pluginPackage = a.kind == "plugin";
         view.setViewedComponent(&list, false);
         view.setScrollBarsShown(true, false);
-        for(auto* c : std::initializer_list<juce::Component*>{&own, &locked, &view, &go, &cancel}) addAndMakeVisible(c);
-        setSize(420, std::min(630, int(a.items.size()) * 30 + headings.size() * 26 + std::max(0, headings.size() - 1) * 4 + 186 + codeLines_ * 18));
+        for(auto* c : std::initializer_list<juce::Component*>{&view, &go, &cancel}) addAndMakeVisible(c);
+        if(!pluginPackage) { addAndMakeVisible(own); addAndMakeVisible(locked); } // a plugin package's builds go into the store either way
+        setSize(420, std::min(630, int(a.items.size() + a.code.size()) * 30 + headings.size() * 26 + std::max(0, headings.size() - 1) * 4 + (pluginPackage ? 126 : 186) + codeLines_ * 18));
     }
 
     void InstallChoices::resized()
     {
         auto area = getLocalBounds().reduced(16, 12);
         signerArea_ = area.removeFromTop(30);
-        own.setBounds(area.removeFromTop(30)); locked.setBounds(area.removeFromTop(30));
+        if(!pluginPackage) { own.setBounds(area.removeFromTop(30)); locked.setBounds(area.removeFromTop(30)); }
         area.removeFromTop(6);
         auto bar = area.removeFromBottom(30);
         if(codeLines_) { area.removeFromBottom(6); code.setBounds(area.removeFromBottom(codeLines_ * 18)); }
         go.setBounds(bar.removeFromRight(120)); bar.removeFromRight(8); cancel.setBounds(bar.removeFromRight(100));
         view.setBounds(area);
-        const int tall = items.size() * 30 + headings.size() * 26 + std::max(0, headings.size() - 1) * 4;
+        const int tall = (items.size() + plugins.size()) * 30 + headings.size() * 26 + std::max(0, headings.size() - 1) * 4;
         list.setSize(area.getWidth() - (tall > area.getHeight() ? view.getScrollBarThickness() : 0), tall);
         auto rows = list.getLocalBounds();
         bool firstHeading = true; // headings and items, in order; 4 px above each heading after the first
@@ -924,7 +930,7 @@ namespace oscairn::standalone
     // user's own, the default for an exported Performance) and which items, all ticked.
     void LibraryPane::install()
     {
-        chooser_ = std::make_unique<juce::FileChooser>("Install a library or an exported Performance", juce::File::getSpecialLocation(juce::File::userDocumentsDirectory), "*.olib");
+        chooser_ = std::make_unique<juce::FileChooser>("Install a library, an exported Performance or Sound, or a plugin package", juce::File::getSpecialLocation(juce::File::userDocumentsDirectory), "*.olib");
         chooser_->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles, [safe = juce::Component::SafePointer<LibraryPane>(this)](const juce::FileChooser& fc) {
             if(!safe || fc.getResult() == juce::File()) return;
             const auto file = fc.getResult().getFullPathName().toStdString();
@@ -944,7 +950,7 @@ namespace oscairn::standalone
             content->go.onClick = [safe, dialog, content, file] {
                 SoundAction install; install.kind = SoundAction::InstallArchive; install.directory = file; install.asNew = content->locked.getToggleState(); install.acceptCode = content->asks;
                 for(int i = 0; i < content->items.size(); ++i) if(content->items[i]->getToggleState()) install.items.push_back(content->ids[size_t(i)]);
-                if(install.items.empty()) { juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon, "Install", "Choose at least one item."); return; }
+                if(install.items.empty() && !content->pluginPackage) { juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::InfoIcon, "Install", "Choose at least one item."); return; }
                 if(install.items.size() == content->ids.size()) install.items.clear(); // all of it
                 dialog->exitModalState(0);
                 if(!safe) return;
