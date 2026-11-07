@@ -20,6 +20,7 @@ import zipfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+SOURCE = {"url": "https://example.com/organ.git", "revision": "v2.1.0"}
 BUILDER = HERE / "template" / "scripts" / "build-index.py"
 failures = 0
 
@@ -54,17 +55,20 @@ def main(tool):
             assert out.returncode == 0, out.stderr
             digest = out.stdout.split()[5]
             inside = f"Plugins/clap/{plugin}@2.1.0/linux-arm64/Organ.clap"
+            copying = b"GNU GENERAL PUBLIC LICENSE\n"
             manifest = {
                 "format": "oscairn.library", "version": 3, "id": plugin, "name": "Example Organ", "kind": "plugin",
+                "license": "GPL-3.0-or-later", "source": SOURCE,
                 "items": [],
                 "plugins": [{"format": "clap", "id": plugin, "version": "2.1.0", "name": "Example Organ", "builds": [
                     {"platform": "linux-arm64", "path": inside, "sha256": digest,
                      "signatures": json.loads(Path(str(build) + ".sig").read_text()) if signed else []}]}],
-                "files": {inside: hashlib.sha256(build.read_bytes()).hexdigest()},
+                "files": {inside: hashlib.sha256(build.read_bytes()).hexdigest(), "Licenses/COPYING": hashlib.sha256(copying).hexdigest()},
             }
             with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as z:
                 z.writestr("library.json", json.dumps(manifest))
                 z.write(build, inside)
+                z.writestr("Licenses/COPYING", copying)
             if signed:
                 out = run(tool, "archive", keys / f"{key}.key", path)
                 assert out.returncode == 0, out.stderr
@@ -90,7 +94,7 @@ def main(tool):
         release = {
             "format": "oscairn.repository-release", "version": 1, "id": "com.example.organ", "release": "2.1.0",
             "publisher": "com.example", "summary": "A tonewheel organ", "license": "GPL-3.0-or-later", "tags": ["organ"],
-            "platforms": ["linux-arm64"],
+            "platforms": ["linux-arm64"], "source": SOURCE,
             "archive": {"path": "2.1.0.olib", "sha256": hashlib.sha256(data).hexdigest(), "size": len(data)}, "yanked": None}
         (release_dir / "2.1.0.json").write_text(json.dumps(release))
 
@@ -188,6 +192,9 @@ def main(tool):
         refused(dict(release, archive=dict(release["archive"], sha256=hashlib.sha256(unsigned).hexdigest(), size=len(unsigned))),
                 "not signed by its publisher's key", "an unsigned archive is refused", unsigned)
         refused(dict(release, publisher="org.other"), "no publishers/org.other.json", "a release from an unknown publisher is refused")
+        refused(dict(release, source=dict(SOURCE, revision="v2.1.1")), "`source` is not the archive's", "a record whose source is not the archive's is refused")
+        refused({k: v for k, v in release.items() if k != "source"}, "`source` is not the archive's", "a record without the archive's source is refused")
+        refused(dict(release, license="MIT"), "`license` is not the archive's", "a record whose license is not the archive's is refused")
         # A build linking a Homebrew library: a 64-bit Mach-O bundle with one LC_LOAD_DYLIB.
         name = b"/opt/homebrew/lib/libfftw3.3.dylib\0"
         command = struct.pack("<IIIIII", 0xC, (24 + len(name) + 7) & ~7, 24, 0, 0, 0) + name
@@ -236,11 +243,11 @@ def main(tool):
         check(out.returncode == 0 and len(out.stdout.splitlines()) == 2, "oscairn-sign signs a bundle for each of its plugins: " + out.stderr.strip())
         duo_dir = repo / "packages" / "com.example.duo"
         duo_dir.mkdir()
-        out = run(tool, "plugin-package", "--key", keys / "publisher.key", "--plugin", "com.example.duo.a", "Duo A", "--plugin", "com.example.duo.b", "Duo B",
+        out = run(tool, "plugin-package", "--license", "MIT", "--key", keys / "publisher.key", "--plugin", "com.example.duo.a", "Duo A", "--plugin", "com.example.duo.b", "Duo B",
                   duo_dir / "1.0.0.olib", "clap", "com.example.duo", "1.0.0", "Example Duo", f"linux-arm64={duo}")
         check(out.returncode == 0, "and packs it once: " + out.stderr.strip())
         duo_data = (duo_dir / "1.0.0.olib").read_bytes()
-        (duo_dir / "1.0.0.json").write_text(json.dumps(dict(release, id="com.example.duo", release="1.0.0",
+        (duo_dir / "1.0.0.json").write_text(json.dumps(dict(release, id="com.example.duo", release="1.0.0", license="MIT", source=None,
             archive={"path": "1.0.0.olib", "sha256": hashlib.sha256(duo_data).hexdigest(), "size": len(duo_data)})))
         out = build(temp / "duo")
         check(out.returncode == 0, "a package with two plugins in one bundle builds: " + out.stderr.strip())

@@ -133,12 +133,22 @@ namespace oscairn::standalone
         if(!a.code.empty()) list.addAndMakeVisible(headings.add(new juce::Label({}, "Plugins")));
         for(const auto& c : a.code)
             list.addAndMakeVisible(plugins.add(new juce::Label({}, text(c.name + " " + c.version + " (" + c.platform + "): ") + describeSigner(c) + (c.status == "revoked" ? ", not installed" : ""))));
+        // Its license, and where its source is (the GPL's directions to it).
+        if(!a.license.empty() || !a.sourceUrl.empty()) list.addAndMakeVisible(headings.add(new juce::Label({}, "License")));
+        if(!a.license.empty()) { license.setText(text(a.license), juce::dontSendNotification); list.addAndMakeVisible(license); ++aboutRows_; }
+        if(!a.sourceUrl.empty())
+        {
+            source.setButtonText("Source: " + text(a.sourceUrl) + " at " + text(a.sourceRevision));
+            source.setURL(juce::URL(text(a.sourceUrl)));
+            source.setJustificationType(juce::Justification::centredLeft);
+            list.addAndMakeVisible(source); ++aboutRows_;
+        }
         pluginPackage = a.kind == "plugin";
         view.setViewedComponent(&list, false);
         view.setScrollBarsShown(true, false);
         for(auto* c : std::initializer_list<juce::Component*>{&view, &go, &cancel}) addAndMakeVisible(c);
         if(!pluginPackage) { addAndMakeVisible(own); addAndMakeVisible(locked); } // a plugin package's builds go into the store either way
-        setSize(420, std::min(630, int(a.items.size() + a.code.size()) * 30 + headings.size() * 26 + std::max(0, headings.size() - 1) * 4 + (pluginPackage ? 126 : 186) + codeLines_ * 18));
+        setSize(420, std::min(630, int(a.items.size() + a.code.size() + size_t(aboutRows_)) * 30 + headings.size() * 26 + std::max(0, headings.size() - 1) * 4 + (pluginPackage ? 126 : 186) + codeLines_ * 18));
     }
 
     void InstallChoices::resized()
@@ -151,7 +161,7 @@ namespace oscairn::standalone
         if(codeLines_) { area.removeFromBottom(6); code.setBounds(area.removeFromBottom(codeLines_ * 18)); }
         go.setBounds(bar.removeFromRight(120)); bar.removeFromRight(8); cancel.setBounds(bar.removeFromRight(100));
         view.setBounds(area);
-        const int tall = (items.size() + plugins.size()) * 30 + headings.size() * 26 + std::max(0, headings.size() - 1) * 4;
+        const int tall = (items.size() + plugins.size() + aboutRows_) * 30 + headings.size() * 26 + std::max(0, headings.size() - 1) * 4;
         list.setSize(area.getWidth() - (tall > area.getHeight() ? view.getScrollBarThickness() : 0), tall);
         auto rows = list.getLocalBounds();
         bool firstHeading = true; // headings and items, in order; 4 px above each heading after the first

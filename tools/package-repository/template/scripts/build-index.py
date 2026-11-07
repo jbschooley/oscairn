@@ -259,6 +259,16 @@ def read_release(path, root, publishers, tool, cache, problems):
         return None
 
     contents, manifest, types, platforms, common = facts(archive)
+    # The record's license and source are the archive's own (its §6 directions travel inside it).
+    if contents.get("license") and r.get("license") != contents["license"]:
+        problems.add(path, f"`license` is not the archive's ({contents['license']})")
+    source = r.get("source")
+    if source is not None and not (isinstance(source, dict) and set(source) == {"url", "revision"} and all(isinstance(v, str) for v in source.values())):
+        problems.add(path, "`source` is not {\"url\", \"revision\"}")
+    elif source != contents.get("source"):
+        problems.add(path, f"`source` is not the archive's ({json.dumps(contents.get('source'))})")
+    if len(problems) > before:
+        return None
     r["name"] = contents["name"]
     return r, {
         "version": release,

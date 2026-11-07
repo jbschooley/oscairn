@@ -158,9 +158,9 @@ int main(int argc, char** argv)
 
         // oscairn-sign refuses a build linking Homebrew, packs it only when told, and says so.
         write(root / "Brew.clap", machO({{load, "/opt/homebrew/lib/libfftw3.3.dylib"}}));
-        const auto refused = run(tool + " plugin-package " + shell(root / "Brew.olib") + " clap com.example.brew 1.0 Brew macos-arm64=" + shell(root / "Brew.clap"));
+        const auto refused = run(tool + " plugin-package --license MIT " + shell(root / "Brew.olib") + " clap com.example.brew 1.0 Brew macos-arm64=" + shell(root / "Brew.clap"));
         check(refused.first != 0 && refused.second.find("/opt/homebrew/lib/libfftw3.3.dylib") != std::string::npos && !fs::exists(root / "Brew.olib"), "oscairn-sign refuses it: " + refused.second);
-        const auto forced = run(tool + " plugin-package --allow-outside-libraries " + shell(root / "Brew.olib") + " clap com.example.brew 1.0 Brew macos-arm64=" + shell(root / "Brew.clap"));
+        const auto forced = run(tool + " plugin-package --license MIT --allow-outside-libraries " + shell(root / "Brew.olib") + " clap com.example.brew 1.0 Brew macos-arm64=" + shell(root / "Brew.clap"));
         check(forced.first == 0 && forced.second.find("outside") != std::string::npos && forced.second.find("/opt/homebrew/lib/libfftw3.3.dylib") != std::string::npos, "and packs it when told, saying so: " + forced.second);
         const auto verified = run(tool + " verify " + shell(root / "Brew.olib"));
         check(verified.first == 0 && verified.second.find("outside clap com.example.brew 1.0 macos-arm64 Brew.clap: /opt/homebrew/lib/libfftw3.3.dylib") != std::string::npos, "verify reports it: " + verified.second);

@@ -166,7 +166,7 @@ std::map<std::string,fs::path> storedBuilds(const std::string& format,const std:
     std::map<std::string,fs::path> out;std::error_code e;
     const auto folder=storeFolder(format,id,version);
     if(fs::is_directory(folder,e))for(const auto& p:fs::directory_iterator(folder,e)){
-        if(!p.is_directory() || p.path().filename().string().front()=='.')continue;
+        if(!p.is_directory() || !knownPlatform(p.path().filename().string()))continue; // a platform's build, not Licenses/
         for(const auto& b:fs::directory_iterator(p.path(),e))if(b.path().extension()==(format=="lv2"?".lv2":".clap")){out[p.path().filename().string()]=b.path();break;}
     }
     return out;
@@ -1881,7 +1881,7 @@ std::string freshId(){std::random_device random;constexpr char hex[]="0123456789
 
 Control::Archive Session::archiveContents(const std::string& file) {
     const auto p=readPackage(file,{}); // the manifest only
-    Archive out{p.id,p.name,p.kind,{},{},judge("archive",p.signature.key.empty()?std::vector<signing::Signature>{}:std::vector<signing::Signature>{p.signature})};
+    Archive out{p.id,p.name,p.kind,{},{},judge("archive",p.signature.key.empty()?std::vector<signing::Signature>{}:std::vector<signing::Signature>{p.signature}),p.license,p.sourceUrl,p.sourceRevision};
     for(const auto& i:p.items){LibraryItem item;item.kind=i.kind;item.id=i.id;item.name=i.name;out.items.push_back(item);}
     // The code it would add: each plugin build not already in the store. Apps join this when archives carry them (RFC 0022 step 2).
     for(const auto& plugin:p.plugins){
@@ -1967,6 +1967,12 @@ Control::Installed Session::installUnpacked(const Package& p,const fs::path& int
                 // A bundle that holds several plugins is copied for each but the last, which takes it.
                 const bool later=std::any_of(p.plugins.begin(),p.plugins.end(),[&](const auto& q){return &q>&plugin && std::any_of(q.builds.begin(),q.builds.end(),[&](const auto& b){return b.path==build.path;});});
                 storeBuild(plugin.format,plugin.id,plugin.version,plugin.name,build.platform,into/build.path,build.signatures,!later);
+            }
+            // A plugin package's license texts and notices stay beside its plugins' builds.
+            std::error_code e;
+            if(pluginPackage && fs::is_directory(into/"Licenses",e) && fs::is_directory(storeFolder(plugin.format,plugin.id,plugin.version),e)){
+                const auto to=storeFolder(plugin.format,plugin.id,plugin.version)/"Licenses";
+                fs::remove_all(to,e);fs::copy(into/"Licenses",to,fs::copy_options::recursive);
             }
         }
         if(asLibrary){

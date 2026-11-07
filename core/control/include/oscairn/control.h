@@ -246,8 +246,10 @@ namespace oscairn
         // its name in the trust store.
         struct Signer { std::string kind, name, version, platform, status, key, keyName; };
         // code: each plugin build's signer (each app's, when archives carry apps); signer: the
-        // whole archive's. Signatures that do not verify refuse the archive.
-        struct Archive { std::string id, name, kind; std::vector<LibraryItem> items; std::vector<Signer> code; Signer signer; }; // items: kind, id, name
+        // whole archive's. Signatures that do not verify refuse the archive. license: its SPDX
+        // expression; sourceUrl and sourceRevision: where its source is, the commit or tag (empty
+        // when it names none; a plugin package under the GPL, LGPL or AGPL always does).
+        struct Archive { std::string id, name, kind; std::vector<LibraryItem> items; std::vector<Signer> code; Signer signer; std::string license, sourceUrl, sourceRevision; }; // items: kind, id, name
         virtual Archive archiveContents(const std::string& file) = 0;
         // Installs an archive, all of it or the chosen items (IDs), with the samples they use.
         // asLibrary: locked, under its name and its items' IDs; installing again puts back only

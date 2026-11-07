@@ -29,6 +29,10 @@ namespace oscairn
         std::string kind = "library";
         std::vector<Item> items;
         std::vector<Plugin> plugins;
+        // Its license (an SPDX expression) and where its source is: an https:// URL and the exact
+        // commit or tag. A plugin package needs a license, and one under the GPL, LGPL or AGPL
+        // needs the source and its license texts and notices under Licenses/ (their §6).
+        std::string license, sourceUrl, sourceRevision;
         std::map<std::string, std::string> files; // each file's SHA-256 by its path; filled by writePackage
         signing::Signature signature;              // library.sig, the whole archive's over the manifest; an empty key for none
         std::string manifestSha256;                // the manifest's, as read: a package's identity (RFC 0006)
@@ -71,7 +75,7 @@ namespace oscairn
     // The manifest, library.json, as the archive and an installed library hold it.
     std::string manifestJson(const Package& package);
 
-    // Writes `root` (a folder holding Performances/, Sounds/, Assets/ and Plugins/) and the manifest
+    // Writes `root` (a folder holding Performances/, Sounds/, Assets/, Plugins/ and Licenses/) and the manifest
     // into a new archive, every file's SHA-256 in it; with `key`, library.sig, signing the whole
     // archive. Refuses an archive that exists; written beside it and moved in once complete.
     void writePackage(const std::filesystem::path& archive, const Package& package, const std::filesystem::path& root, const signing::Key* key = nullptr);
@@ -83,8 +87,9 @@ namespace oscairn
     // The archive is a zip, read in place, or an unpacked package folder (the same tree; hidden
     // files in it are skipped), read by the same rules. Nothing is written unless `into`'s file
     // system has room for every entry and the largest once more.
-    // Untrusted input: refuses entries outside library.json, Performances/, Sounds/, Assets/ and
-    // Plugins/, paths that climb out or are absolute, links, duplicates, more than 1,048,576 entries
+    // Untrusted input: refuses entries outside library.json, Performances/, Sounds/, Assets/,
+    // Plugins/ and Licenses/, a plugin package without a license, or under the GPL, LGPL or AGPL
+    // without its source (an https:// URL and a commit or tag) and a file under Licenses/, paths that climb out or are absolute, links, duplicates, more than 1,048,576 entries
     // or 64 MiB of names, more than 8 GiB in all, an entry over 2 GiB or a manifest over maxManifestBytes (as declared; each file extracted must be the
     // size it declares), a file whose SHA-256 is not the manifest's or that the manifest does not
     // list, a plugin build whose digest is not its own, and a manifest whose ID or an item's is

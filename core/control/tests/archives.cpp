@@ -445,9 +445,9 @@ int main(int argc, char** argv)
             fs::copy_file(fixture, build);
             check(run(tool + " build " + shell(author) + " clap org.kick.test.synth " + shell(version) + " " + platform() + " " + shell(build)).first == 0, "the build is signed");
             const auto package = temp.path / "Synth.olib";
-            const auto packed = run(tool + " plugin-package --key " + shell(author) + " " + shell(package) + " clap org.kick.test.synth " + shell(version) + " 'KICK Synth' " + platform() + "=" + shell(build));
+            const auto packed = run(tool + " plugin-package --license MIT --key " + shell(author) + " " + shell(package) + " clap org.kick.test.synth " + shell(version) + " 'KICK Synth' " + platform() + "=" + shell(build));
             check(packed.first == 0 && packed.second.find("with 1 builds, signed by " + signing::keyId(authorKey)) != std::string::npos, "oscairn-sign packs a plugin package: " + packed.second);
-            const auto wrongPlatform = run(tool + " plugin-package " + shell(temp.path / "Wrong.olib") + " clap org.kick.test.synth " + shell(version) + " Synth " + other + "=" + shell(build) + " 2>&1");
+            const auto wrongPlatform = run(tool + " plugin-package --license MIT " + shell(temp.path / "Wrong.olib") + " clap org.kick.test.synth " + shell(version) + " Synth " + other + "=" + shell(build) + " 2>&1");
             check(wrongPlatform.first != 0 && wrongPlatform.second.find("not over this build") != std::string::npos && !fs::exists(temp.path / "Wrong.olib"),
                   "a build whose signature is for another platform is not packed: " + wrongPlatform.second);
             const auto read = readPackage(package, {});
@@ -483,25 +483,39 @@ int main(int argc, char** argv)
             const auto signedBoth = run(tool + " build " + shell(author) + " clap org.oscairn.split,org.oscairn.join 0.1.0 " + platform() + " " + shell(build));
             check(signedBoth.first == 0 && signing::readSignatures(build.string() + ".sig").size() == 2, "the bundle is signed for each plugin: " + signedBoth.second);
             const auto package = temp.path / "Splitters.olib";
-            const auto packed = run(tool + " plugin-package --key " + shell(author) + " --plugin org.oscairn.split 'Oscairn Split' --plugin org.oscairn.join 'Oscairn Join' " + shell(package) +
-                                    " clap org.oscairn.splitters 0.1.0 'Oscairn Splitters' " + platform() + "=" + shell(build) + " 2>&1");
+            // Under the AGPL: its license text and source travel with it (§6), and it is refused without them.
+            const auto copying = temp.path / "s-build" / "COPYING";
+            std::ofstream(copying) << "GNU AFFERO GENERAL PUBLIC LICENSE\n";
+            const auto pack = [&](const fs::path& to, const std::string& options) {
+                return run(tool + " plugin-package --key " + shell(author) + " --license AGPL-3.0-or-later " + options + " --plugin org.oscairn.split 'Oscairn Split' --plugin org.oscairn.join 'Oscairn Join' " +
+                           shell(to) + " clap org.oscairn.splitters 0.1.0 'Oscairn Splitters' " + platform() + "=" + shell(build) + " 2>&1");
+            };
+            const auto noSource = pack(temp.path / "Without.olib", "--license-file " + shell(copying));
+            check(noSource.first != 0 && noSource.second.find("carries no source") != std::string::npos && !fs::exists(temp.path / "Without.olib"), "an AGPL plugin package without its source is refused: " + noSource.second);
+            const auto noText = pack(temp.path / "Without.olib", "--source https://github.com/oscairn/oscairn v0.1.0");
+            check(noText.first != 0 && noText.second.find("no license texts") != std::string::npos && !fs::exists(temp.path / "Without.olib"), "an AGPL plugin package without its license text is refused: " + noText.second);
+            const auto packed = pack(package, "--license-file " + shell(copying) + " --source https://github.com/oscairn/oscairn 0123456789abcdef0123456789abcdef01234567");
             check(packed.first == 0 && packed.second.find("packed clap org.oscairn.split, org.oscairn.join 0.1.0 with 1 builds") != std::string::npos, "oscairn-sign packs a bundle with two plugins: " + packed.second);
             const auto read = readPackage(package, {});
             check(read.id == "org.oscairn.splitters" && read.plugins.size() == 2 && read.plugins[0].builds.at(0).path == read.plugins[1].builds.at(0).path &&
                   read.plugins[0].builds[0].signatures.size() == 1 && read.plugins[1].builds[0].signatures.size() == 1, "the bundle is in it once, listed and signed for each plugin");
+            check(read.license == "AGPL-3.0-or-later" && read.sourceUrl == "https://github.com/oscairn/oscairn" && read.sourceRevision == "0123456789abcdef0123456789abcdef01234567" &&
+                  read.files.count("Licenses/COPYING"), "it carries its license, its license text and its source");
             mz_zip_archive z{}; mz_zip_reader_init_file(&z, package.c_str(), 0);
             const auto entries = mz_zip_reader_get_num_files(&z); mz_zip_reader_end(&z);
-            check(entries == 3, "the archive holds the bundle once: " + std::to_string(entries) + " entries");
+            check(entries == 4, "the archive holds the bundle once, and the license text: " + std::to_string(entries) + " entries");
             // A signature over another ID, such as a preset-discovery provider's, is not packed.
             const auto provider = temp.path / "s-provider" / "oscairn-splitters.clap";
             fs::create_directories(provider.parent_path());
             fs::copy(build, provider);
             run(tool + " build " + shell(author) + " clap org.oscairn.split,org.oscairn.join,org.oscairn.splitters.presets 0.1.0 " + platform() + " " + shell(provider));
-            const auto extra = run(tool + " plugin-package --plugin org.oscairn.split Split --plugin org.oscairn.join Join " + shell(temp.path / "Provider.olib") + " clap org.oscairn.splitters 0.1.0 Splitters " + platform() + "=" + shell(provider) + " 2>&1");
+            const auto extra = run(tool + " plugin-package --license MIT --plugin org.oscairn.split Split --plugin org.oscairn.join Join " + shell(temp.path / "Provider.olib") + " clap org.oscairn.splitters 0.1.0 Splitters " + platform() + "=" + shell(provider) + " 2>&1");
             check(extra.first != 0 && extra.second.find("not over this build of org.oscairn.split, org.oscairn.join") != std::string::npos && !fs::exists(temp.path / "Provider.olib"),
                   "a signature over an ID not packed is refused: " + extra.second);
             Session s(48000, 64);
             s.setTrustedKey({"", authorKey, "Author", {"plugins"}});
+            const auto contents = s.archiveContents(package.string());
+            check(contents.license == "AGPL-3.0-or-later" && contents.sourceUrl == "https://github.com/oscairn/oscairn" && contents.sourceRevision.size() == 40, "its contents give its license and source");
             const auto installed = s.installArchive(package.string(), false);
             check(installed.notes.empty() && installed.code.size() == 2 && installed.code[0].status == "trusted" && installed.code[1].status == "trusted", "both plugins install, each trusted");
             const auto listed = s.installedPlugins();
@@ -510,6 +524,7 @@ int main(int argc, char** argv)
             const auto stored = [&](const char* id) { return temp.path / "s" / "Plugins" / "clap" / pluginFolderName(id, "0.1.0") / platform() / build.filename(); };
             const auto split = stored("org.oscairn.split"), join = stored("org.oscairn.join");
             check(fs::exists(split) && fs::exists(join) && bundleDigest(split) == bundleDigest(build) && bundleDigest(join) == bundleDigest(build), "each has the whole bundle in the store");
+            check(fs::exists(split.parent_path().parent_path() / "Licenses" / "COPYING") && fs::exists(join.parent_path().parent_path() / "Licenses" / "COPYING"), "and the license text beside it");
             s.add("split", split.string(), "org.oscairn.split"); s.add("join", join.string(), "org.oscairn.join"); s.commit();
             check(s.sessionStatus().failures.empty() && s.graphState().topology.nodes.size() == 2, "both load from the store");
         }

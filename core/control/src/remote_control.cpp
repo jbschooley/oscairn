@@ -553,6 +553,8 @@ namespace oscairn
         auto d=impl_->call("library.contents","{\"file\":"+quote(file)+'}',30000);auto r=field(d.get(),"result");
         Archive a{string(field(r,"id")),string(field(r,"name")),string(field(r,"kind")),{},signers(field(r,"code")),signer(field(r,"signer"))};
         for(auto i:array(field(r,"items"))){LibraryItem item;item.kind=string(field(i,"kind"));item.id=string(field(i,"id"));item.name=string(field(i,"name"));a.items.push_back(item);}
+        a.license=string(field(r,"license"));
+        if(const auto* s=field(r,"source");s && s->type==json_type_object){a.sourceUrl=string(field(s,"url"));a.sourceRevision=string(field(s,"revision"));}
         return a;
     }
     Control::Installed RemoteControl::installArchive(const std::string& file,bool asLibrary,const std::vector<std::string>& items,bool acceptUnsignedCode) {

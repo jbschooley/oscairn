@@ -352,6 +352,17 @@ int main(int argc, char** argv)
                     check(shown == want && install.pluginPackage && install.items.isEmpty() && !install.own.isVisible() && !install.locked.isVisible() && install.go.getButtonText() == "Install",
                           "a plugin package lists its plugins under Plugins with their signers, without a choice of how: " + (shown.size() > 1 ? shown[1] : std::string()));
                     snapshot(install, "install-plugin");
+                    // Under the GPL: its license, and a link to its source at the commit it names.
+                    plugin.license = "GPL-3.0-or-later"; plugin.sourceUrl = "https://github.com/oscairn/setbfree"; plugin.sourceRevision = "v0.8.13-oscairn.1";
+                    standalone::InstallChoices licensed(plugin);
+                    standalone::setDesktopMode(licensed, 1); licensed.resized();
+                    std::vector<std::string> labels;
+                    for(auto* c : licensed.list.getChildren()) if(auto* l = dynamic_cast<juce::Label*>(c)) labels.push_back(l->getText().toStdString());
+                    check(labels.size() == 5 && labels[3] == "License" && labels[4] == "GPL-3.0-or-later" && licensed.source.isVisible() &&
+                          licensed.source.getURL().toString(false) == "https://github.com/oscairn/setbfree" &&
+                          licensed.source.getButtonText() == "Source: https://github.com/oscairn/setbfree at v0.8.13-oscairn.1" && licensed.source.getBottom() <= licensed.list.getHeight(),
+                          "a plugin package under the GPL shows its license and a link to its source: " + licensed.source.getButtonText().toStdString());
+                    snapshot(licensed, "install-plugin-license");
                 }
                 // A package repository's listing (RFC 0031): each package's newest version this
                 // device can install with its Install button, or, disabled, why it cannot.

@@ -34,7 +34,8 @@ namespace oscairn::standalone
     /// An archive's install choices: locked or as the user's own, and which items, all ticked,
     /// under a heading for each kind there is (Performances, then Sounds); under Plugins, each
     /// plugin build it adds to the store with who signed it; who signed the archive, and a warning
-    /// for builds from an unknown source or a revoked key (RFC 0006). A plugin package holds only
+    /// for builds from an unknown source or a revoked key (RFC 0006); under License, its license
+    /// and a link to its source at the commit or tag it names. A plugin package holds only
     /// plugins, so it offers no choice of how. The list scrolls; the options above and the
     /// buttons below stay in view.
     class InstallChoices : public juce::Component
@@ -48,6 +49,8 @@ namespace oscairn::standalone
         juce::OwnedArray<juce::Label> headings; // in list, over each kind's items
         juce::OwnedArray<juce::ToggleButton> items;
         juce::OwnedArray<juce::Label> plugins;  // in list, under the Plugins heading: each build and its signer
+        juce::Label license;                    // in list, under the License heading, when the archive names one
+        juce::HyperlinkButton source;           // under it: its source, the commit or tag, when it names one
         std::vector<std::string> ids;
         bool pluginPackage = false;
         juce::TextButton go{"Install"}, cancel{"Cancel"};
@@ -58,6 +61,7 @@ namespace oscairn::standalone
     private:
         juce::String signer_; juce::Rectangle<int> signerArea_;
         int codeLines_ = 0;
+        int aboutRows_ = 0; // license and source rows in list
     };
     /// What a package repository offers (RFC 0031): a row per package with the newest version this
     /// device can install and its Install button, or, grayed, why it cannot install any. The rows

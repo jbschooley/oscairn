@@ -264,7 +264,9 @@ Performances, signed whole with `--key`; a bundle holding several plugins is sig
 them at once (`build` takes the IDs comma-separated) and packed once, each plugin named with
 `--plugin <id> <name>`. It refuses a build loading libraries from outside the system and its
 bundle ([rules](library-archive.md#plugin-packages)) unless `--allow-outside-libraries`, which
-it reports. `archive` signs an archive whole; `verify` checks every signature
+it reports. `--license`, `--license-file` and `--source <url> <commit-or-tag>` give its license,
+license texts and source, which a GPL, LGPL or AGPL plugin package must have
+([license and source](library-archive.md#license-and-source)). `archive` signs an archive whole; `verify` checks every signature
 and hash in one and says who signed what (`--into <folder>` picks where it unpacks to check,
 on the file system with room for it). The app's own keys, for signing exports, are
 `Keys/<name>.key` in the data folder (`keys.make`, `keys.list`); the keys a device trusts, and

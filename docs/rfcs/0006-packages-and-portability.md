@@ -43,7 +43,12 @@ Checked when built and tested; the sections below say how.
       `package-repository-index`; a build loading libraries from outside the system and its
       bundle refused by `oscairn-sign plugin-package` (unless `--allow-outside-libraries`, which
       it reports), listed by `oscairn-sign verify` and reported by `oscairn-plugin-check`, Mach-O
-      and ELF read directly, 2026-11-07, `control-libraries`. Not yet: Windows builds' libraries,
+      and ELF read directly, 2026-11-07, `control-libraries`; a package's license, license
+      texts and notices (`Licenses/`) and source (URL and commit or tag), required of a GPL,
+      LGPL or AGPL plugin package, shown in the install dialog and kept in the store beside the
+      builds, 2026-11-07, `control-package`, `control-archives`, `desktop-gaps`,
+      `package-repository-index`. Not yet: an export carrying the store's license texts on,
+      plugins.list showing a plugin's license, Windows builds' libraries,
       re-judging store builds
       when a key is revoked, revocations through system updates, a product profile refusing
       unsigned code, apps (not packaged yet), trusting a key from the install prompt, repositories

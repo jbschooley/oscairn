@@ -627,9 +627,13 @@ What changes for the plugin:
   the `.sig` beside the bundle: exports carry it. Re-sign after every rebuild; a signature over
   another build is left out. Publish your key's ID (shown by `oscairn-sign key`) so users can
   check it. `oscairn-sign verify archive.olib` lists who signed what in an archive.
-  To ship the plugin alone, `oscairn-sign plugin-package --key author.key MyPlugin.olib clap
-  <id> <version> <name> <platform>=MyPlugin.clap...` packs your signed builds into a
-  [plugin package](library-archive.md#plugin-packages), which installs them into the store.
+  To ship the plugin alone, `oscairn-sign plugin-package --key author.key --license <spdx>
+  --license-file COPYING --source <url> <commit-or-tag> MyPlugin.olib clap <id> <version>
+  <name> <platform>=MyPlugin.clap...` packs your signed builds into a
+  [plugin package](library-archive.md#plugin-packages), which installs them into the store,
+  with its license texts and notices and where its source is; a GPL, LGPL or AGPL plugin
+  package is refused without its source and a license text
+  ([license and source](library-archive.md#license-and-source)).
   A bundle holding several plugins is signed for all of them at once (`oscairn-sign build`
   takes the IDs comma-separated) and packed once, each plugin named with `--plugin <id>
   <name>`; a preset-discovery provider in it is not a plugin and is neither listed nor signed.

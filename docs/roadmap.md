@@ -585,7 +585,9 @@ Each starts as an RFC:
   documents, archives carrying and installing every platform's CLAP builds with every file
   hashed, optional signatures on items, plugin builds and whole archives with a trust store, and
   installs asking before plugin code unsigned or by an unknown key; plugin packages carrying
-  plugins without Sounds or Performances; on the desktop, signing an
+  plugins without Sounds or Performances, a bundle holding several plugins once, refused when a
+  build loads libraries from outside the system and its bundle, with their license texts and
+  source (required under the GPL, LGPL and AGPL); on the desktop, signing an
   export with a chosen key, the signer shown when installing, and the keys in Settings):
   first a clean-machine, offline Performance/Setlist transfer with managed CLAP packages,
   project manifests/exact dependency locks, target builds, project-local dependency views

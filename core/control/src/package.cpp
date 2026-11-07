@@ -22,7 +22,20 @@ namespace oscairn
         using V = const json_value_s*;
         constexpr size_t maxEntries = 1u << 20, maxPath = 1024; // a library of thousands of items, each a few files
         constexpr uint64_t maxEntry = 2ull << 30, maxTotal = 8ull << 30, maxNameBytes = 64ull << 20;
-        const std::set<std::string> tops{"Performances", "Sounds", "Assets", "Plugins"};
+        const std::set<std::string> tops{"Performances", "Sounds", "Assets", "Plugins", "Licenses"};
+        // A license expression naming the GPL, LGPL or AGPL, any version: object code under them
+        // goes with its source, or directions to it (their §6), and its notices.
+        bool copyleft(const std::string& license)
+        {
+            for(size_t at = 0; at < license.size();)
+            {
+                const auto end = std::min(license.find_first_of(" ()", at), license.size());
+                const auto word = license.substr(at, end - at);
+                if(word.rfind("GPL-", 0) == 0 || word.rfind("LGPL-", 0) == 0 || word.rfind("AGPL-", 0) == 0) return true;
+                at = end + 1;
+            }
+            return false;
+        }
         bool hidden(const fs::path& relative) { for(const auto& part : relative) if(!part.empty() && part.string()[0] == '.') return true; return false; }
 
         [[noreturn]] void bad(const std::string& why) { throw std::runtime_error("not a usable Oscairn archive: " + why); }
@@ -139,8 +152,10 @@ namespace oscairn
                        ",\"name\":" + detail::quote(p.name) + ",\"builds\":[" + builds + "]}";
         }
         for(const auto& [path, sha] : package.files) files += std::string(files.empty() ? "" : ",") + detail::quote(path) + ":" + detail::quote(sha);
+        const auto source = package.sourceUrl.empty() ? std::string("null") : "{\"url\":" + detail::quote(package.sourceUrl) + ",\"revision\":" + detail::quote(package.sourceRevision) + "}";
         return "{\"format\":\"oscairn.library\",\"version\":3,\"id\":" + detail::quote(package.id) + ",\"name\":" + detail::quote(package.name) +
-               ",\"kind\":" + detail::quote(package.kind) + ",\"items\":[" + items + "],\"plugins\":[" + plugins + "],\"files\":{" + files + "}}\n";
+               ",\"kind\":" + detail::quote(package.kind) + ",\"license\":" + detail::quote(package.license) + ",\"source\":" + source +
+               ",\"items\":[" + items + "],\"plugins\":[" + plugins + "],\"files\":{" + files + "}}\n";
     }
 
     void writePackage(const fs::path& archive, const Package& package, const fs::path& root, const signing::Key* key)
@@ -354,6 +369,24 @@ namespace oscairn
             }
             // A plugin package carries plugin builds and nothing else.
             if(p.kind == "plugin" && (!p.items.empty() || p.plugins.empty())) bad("a plugin package holds plugins and no items");
+            // Its license and source: a plugin package names its license, and object code under the
+            // GPL, LGPL or AGPL comes with directions to its source and its license texts.
+            if(const V license = detail::member(d, "license"); license && license->type != json_type_null) p.license = text(license);
+            if(const V source = detail::member(d, "source"); source && source->type != json_type_null)
+            {
+                p.sourceUrl = text(detail::member(source, "url")); p.sourceRevision = text(detail::member(source, "revision"));
+                const auto plain = [](const std::string& s) { return std::none_of(s.begin(), s.end(), [](char c) { return static_cast<unsigned char>(c) <= ' ' || c == 127; }); };
+                if(p.sourceUrl.rfind("https://", 0) != 0 || p.sourceUrl.size() > 2048 || !plain(p.sourceUrl) || p.sourceRevision.empty() || p.sourceRevision.size() > 128 || !plain(p.sourceRevision))
+                    bad("its source is not an https:// address and a commit or tag");
+            }
+            if(p.license.size() > 256) bad("its license is too long");
+            if(p.kind == "plugin" && p.license.empty()) bad("a plugin package names no license");
+            if(p.kind == "plugin" && copyleft(p.license))
+            {
+                const auto texts = names.lower_bound("Licenses/");
+                if(p.sourceUrl.empty() || texts == names.end() || texts->rfind("Licenses/", 0) != 0)
+                    bad("a plugin package under " + p.license + " carries no source (an https:// address and a commit or tag) or no license texts under Licenses/");
+            }
             // Every file's SHA-256, as the manifest lists it, and each build's digest.
             const V files = detail::member(d, "files");
             if(!files || files->type != json_type_object) bad("it lists no files");

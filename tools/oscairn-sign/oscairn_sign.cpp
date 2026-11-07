@@ -30,13 +30,18 @@ namespace
                    "      several plugins, each signed\n"
                    "  oscairn-sign archive <key-file> <archive.olib>\n"
                    "      sign an archive whole (library.sig), replacing any signature over it\n"
-                   "  oscairn-sign plugin-package [--key <key-file>] [--plugin <id> <name>]... [--allow-outside-libraries] <archive.olib> <format> <id> <version> <name> <platform>=<build>...\n"
+                   "  oscairn-sign plugin-package [--key <key-file>] [--plugin <id> <name>]... [--allow-outside-libraries]\n"
+                   "                             --license <spdx> [--license-file <file>]... [--source <url> <commit-or-tag>]\n"
+                   "                             <archive.olib> <format> <id> <version> <name> <platform>=<build>...\n"
                    "      pack plugin builds, each with the signatures in <build>.sig beside it, into a\n"
                    "      plugin package (an archive with no items) with that ID and name; with --key,\n"
                    "      signed whole. A bundle holding several plugins names each with --plugin (else\n"
                    "      its one plugin is <id>, named <name>); <build>.sig signs each of them. A build\n"
                    "      loading libraries from outside the system and its bundle is refused unless\n"
-                   "      --allow-outside-libraries, which says what it packed anyway\n"
+                   "      --allow-outside-libraries, which says what it packed anyway. Its license (an SPDX\n"
+                   "      expression), license texts and notices (into Licenses/) and source (an https://\n"
+                   "      address and the exact commit or tag) travel in it; under the GPL, LGPL or AGPL\n"
+                   "      the source and a license file are required\n"
                    "  oscairn-sign verify [--into <folder>] <archive.olib>\n"
                    "      check every signature and hash in an archive and say who signed what, and each\n"
                    "      build's libraries from outside the system and its bundle (lines \"outside ...\");\n"
@@ -54,6 +59,18 @@ namespace
         std::string out;
         for(const auto& s : list) out += (out.empty() ? "" : ",") + signing::keyId(s.key);
         return out;
+    }
+    // License texts and notices, each into Licenses/ under its own name.
+    void stageLicenses(const std::vector<fs::path>& files, const fs::path& staged)
+    {
+        for(const auto& f : files)
+        {
+            if(!fs::is_regular_file(f)) throw std::runtime_error("no license file " + f.string());
+            const auto to = staged / "Licenses" / f.filename();
+            if(fs::exists(to)) throw std::runtime_error("two license files named " + f.filename().string());
+            fs::create_directories(to.parent_path());
+            fs::copy_file(f, to);
+        }
     }
     // A repository's file, whole: a root or an index key is a few kilobytes.
     std::string readFile(const fs::path& file)
@@ -108,15 +125,19 @@ int main(int argc, char** argv)
             std::vector<std::pair<std::string, std::string>> listed; // --plugin: each plugin the bundle holds, by ID and name
             bool allowOutside = false;
             std::vector<std::string> outside; // packed anyway, with --allow-outside-libraries: said when done
+            Package p;
+            std::vector<fs::path> licenseFiles; // --license-file: each into Licenses/
             while(!rest.empty() && rest[0].rfind("--", 0) == 0)
             {
                 if(rest[0] == "--key" && rest.size() > 1) { key = std::make_unique<signing::Key>(signing::loadKey(rest[1])); rest.erase(rest.begin(), rest.begin() + 2); }
                 else if(rest[0] == "--plugin" && rest.size() > 2) { listed.push_back({rest[1], rest[2]}); rest.erase(rest.begin(), rest.begin() + 3); }
                 else if(rest[0] == "--allow-outside-libraries") { allowOutside = true; rest.erase(rest.begin()); }
+                else if(rest[0] == "--license" && rest.size() > 1) { p.license = rest[1]; rest.erase(rest.begin(), rest.begin() + 2); }
+                else if(rest[0] == "--license-file" && rest.size() > 1) { licenseFiles.push_back(rest[1]); rest.erase(rest.begin(), rest.begin() + 2); }
+                else if(rest[0] == "--source" && rest.size() > 2) { p.sourceUrl = rest[1]; p.sourceRevision = rest[2]; rest.erase(rest.begin(), rest.begin() + 3); }
                 else return usage();
             }
             if(rest.size() < 6) return usage();
-            Package p;
             p.kind = "plugin"; p.id = rest[2]; p.name = rest[4];
             if(listed.empty()) listed.push_back({rest[2], rest[4]});
             std::string ids;
@@ -162,8 +183,9 @@ int main(int argc, char** argv)
                 fs::copy(build, staged / inside, fs::copy_options::recursive);
                 for(size_t k = 0; k < p.plugins.size(); ++k) p.plugins[k].builds.push_back({forPlatform, inside.generic_string(), digest, signatures[k]});
             }
+            stageLicenses(licenseFiles, staged);
             writePackage(rest[0], p, staged, key.get());
-            try { readPackage(rest[0], {}); } catch(...) { fs::remove(rest[0]); throw; } // its ID, format and bundles as a reader takes them
+            try { readPackage(rest[0], {}); } catch(...) { fs::remove(rest[0]); throw; } // its ID, format, bundles, license and source as a reader takes them
             std::printf("packed %s %s %s with %zu builds%s\n", format.c_str(), ids.c_str(), version.c_str(), p.plugins[0].builds.size(),
                         key ? (", signed by " + signing::keyId(key->publicKey)).c_str() : "");
             for(const auto& o : outside) std::printf("packed with --allow-outside-libraries, loading from outside the system and its bundle: %s\n", o.c_str());

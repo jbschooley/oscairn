@@ -11,6 +11,7 @@ A library, an exported Performance or Sound, or a plugin package is one archive 
 | `Sounds/<folder>/` | Each Sound the same way, `sound.json` and `nodes/` |
 | `Assets/<first 16 hex digits of the SHA-256>/<file>` | Each sample the items' plugins use, once |
 | `Plugins/<format>/<id>@<version>/<platform>/<bundle>` | Each plugin build the items use ([RFC 0006](rfcs/0006-packages-and-portability.md)), a file or a bundle folder as installed; characters other than letters, digits, `.`, `-`, `@` and `_` in the ID and version are `_` |
+| `Licenses/<file>` | Its license texts and notices ([license and source](#license-and-source)) |
 
 The manifest:
 
@@ -20,6 +21,8 @@ The manifest:
 | `id` | The library's ID: its folder's name when installed as a library, and what imported copies record as their `origin`; 1 to 64 letters, digits, `.`, `-` and `_`, the first one a letter or digit and the last not a `.` |
 | `name` | Its name |
 | `kind` | `library`, `performance` for an exported Performance, `sound` for an exported Sound (its ID and name are that item's), or `plugin` for a [plugin package](#plugin-packages): plugin builds and no items. Any other kind is refused |
+| `license` | Its license, an SPDX expression (at most 256 bytes); empty when it names none. A plugin package names one |
+| `source` | `null`, or where its source is: `{url, revision}`, an `https://` address and the exact commit or tag (at most 2048 and 128 bytes, no spaces or control characters) |
 | `items` | Each item's `kind` (`performance` or `sound`), `id` (as plain as the library's: an exported item's ID is its archive's), `name`, `path`, its folder in the archive, and `signatures` (optional) |
 | `plugins` | Each plugin's `format`, `id`, `version`, `name` and `builds`: each build's `platform` (such as `macos-arm64` or `linux-arm64`), `path` in the archive, `sha256`, its digest as a [Performance's lock](performance-format.md) gives it, and `signatures` (optional) |
 | `files` | Every other entry's SHA-256, by its path |
@@ -42,7 +45,7 @@ the same signature rules. Its ID and name are the package's, given to `oscairn-s
 plugin-package`:
 
 ```sh
-oscairn-sign plugin-package --key author.key Organ.olib clap com.example.organ 2.1.0 "Example Organ" \
+oscairn-sign plugin-package --key author.key --license MIT Organ.olib clap com.example.organ 2.1.0 "Example Organ" \
     macos-arm64=build/mac/Organ.clap linux-arm64=build/linux/Organ.clap
 ```
 
@@ -61,7 +64,8 @@ in the `.sig`, so signing them one at a time would keep only the last):
 
 ```sh
 oscairn-sign build author.key clap org.oscairn.split,org.oscairn.join 0.1.0 macos-arm64 oscairn-splitters.clap
-oscairn-sign plugin-package --key author.key --plugin org.oscairn.split "Oscairn Split" \
+oscairn-sign plugin-package --key author.key --license AGPL-3.0-or-later --license-file LICENSE \
+    --source https://github.com/oscairn/oscairn v0.1.0 --plugin org.oscairn.split "Oscairn Split" \
     --plugin org.oscairn.join "Oscairn Join" Splitters.olib clap org.oscairn.splitters 0.1.0 \
     "Oscairn Splitters" macos-arm64=oscairn-splitters.clap
 ```
@@ -107,12 +111,36 @@ kind of their own, `app`, with an `apps` list beside `plugins`, each app signed 
 [RFC 0006](rfcs/0006-packages-and-portability.md#signatures) describes. Not built: a reader
 refuses the kind until then.
 
+## License and source
+
+A package carries its license texts and notices under `Licenses/` (`COPYING`, `NOTICE`,
+`AUTHORS`...) and names its license and source in the manifest. A plugin package must name a
+license. Object code under the GPL, LGPL or AGPL, any version, must go with its source or
+directions to it next to it (their §6, and the AGPL's §13), so a plugin package whose license
+expression names any of them is refused unless it gives its `source` and holds at least one
+file under `Licenses/`:
+
+```sh
+oscairn-sign plugin-package --key author.key --license GPL-3.0-or-later --license-file COPYING \
+    --license-file NOTICE --source https://github.com/example/organ v2.1.0 \
+    Organ.olib clap com.example.organ 2.1.0 "Example Organ" linux-arm64=Organ.clap
+```
+
+`library.contents` gives the license and source, and the desktop's install dialog shows them
+under **License**, the source as a link. Installing a plugin package copies `Licenses/` into
+each of its plugins' folders in the [plugin store](#the-plugin-store), beside the builds. A
+package repository's release record repeats the archive's `source`, and its checks refuse a
+record whose `source` or `license` is not the archive's.
+
 ## Reading one
 
 An archive is untrusted. Reading extracts it into a new folder of its own, refusing, and leaving
 nothing behind:
 
-- an entry outside `library.json`, `Performances/`, `Sounds/`, `Assets/` and `Plugins/`;
+- an entry outside `library.json`, `Performances/`, `Sounds/`, `Assets/`, `Plugins/` and
+  `Licenses/`;
+- a plugin package naming no license, or under the GPL, LGPL or AGPL without its `source` or a
+  file under `Licenses/`, and a `source` that is not an `https://` address and a revision;
 - a path that is absolute, climbs out (`..`), names a drive (`:`), uses a backslash, is hidden
   (a component starting with `.`), has a control character, or is longer than 1024 bytes;
 - a link, or an entry twice;

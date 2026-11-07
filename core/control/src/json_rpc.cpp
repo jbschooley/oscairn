@@ -734,7 +734,9 @@ namespace oscairn
                     if(!install){
                         const auto a=c.archiveContents(file);std::vector<std::string> items;
                         for(const auto& i:a.items)items.push_back("{\"kind\":"+quote(i.kind)+",\"id\":"+quote(i.id)+",\"name\":"+quote(i.name)+'}');
-                        return "{\"id\":"+quote(a.id)+",\"name\":"+quote(a.name)+",\"kind\":"+quote(a.kind)+",\"items\":"+join(items)+",\"code\":"+code(a.code)+",\"signer\":"+signer(a.signer)+'}';
+                        const auto source=a.sourceUrl.empty()?std::string("null"):"{\"url\":"+quote(a.sourceUrl)+",\"revision\":"+quote(a.sourceRevision)+'}';
+                        return "{\"id\":"+quote(a.id)+",\"name\":"+quote(a.name)+",\"kind\":"+quote(a.kind)+",\"items\":"+join(items)+",\"code\":"+code(a.code)+",\"signer\":"+signer(a.signer)+
+                               ",\"license\":"+quote(a.license)+",\"source\":"+source+'}';
                     }
                     const auto r=c.installArchive(file,member(p,"asLibrary") && boolean(member(p,"asLibrary")),chosen,member(p,"acceptUnsignedCode") && boolean(member(p,"acceptUnsignedCode")));
                     std::vector<std::string> notes;

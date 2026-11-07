@@ -162,7 +162,7 @@ int main()
         {
             const auto onlyPlugin = root / "plugin-only";
             write(onlyPlugin / build / "Contents/binary", "code");
-            Package plugin; plugin.id = "synth"; plugin.name = "Synth"; plugin.kind = "plugin";
+            Package plugin; plugin.id = "synth"; plugin.name = "Synth"; plugin.kind = "plugin"; plugin.license = "MIT";
             plugin.plugins = {{"clap", "synth", "1", "Synth", {{platform(), build, bundleDigest(onlyPlugin / build)}}}};
             writePackage(root / "Plugin.olib", plugin, onlyPlugin);
             const auto got = readPackage(root / "Plugin.olib", root / "plugin-out");
@@ -174,6 +174,32 @@ int main()
             plugin.plugins[1].id = "synth";
             writePackage(root / "Twice.olib", plugin, onlyPlugin);
             check(refused(root / "Twice.olib", root / "twice-out", "a plugin listed twice"), "a plugin listed twice is refused");
+            plugin.plugins.pop_back();
+            // Its license and source: a plugin package names a license; under the GPL, LGPL or AGPL
+            // it carries its source and a license text, and a source is an https:// address and a revision.
+            int n = 0;
+            auto packs = [&](Package q, bool withText) {
+                const auto from = root / ("licensed-" + std::to_string(++n));
+                fs::copy(onlyPlugin, from, fs::copy_options::recursive);
+                if(withText) write(from / "Licenses/COPYING", "GPL");
+                const auto file = root / ("Licensed-" + std::to_string(n) + ".olib");
+                writePackage(file, q, from);
+                try { const auto got = readPackage(file, root / ("licensed-out-" + std::to_string(n))); return got.license == q.license && got.sourceUrl == q.sourceUrl && got.sourceRevision == q.sourceRevision; }
+                catch(const std::runtime_error&) { return false; }
+            };
+            auto gpl = plugin; gpl.license = "GPL-3.0-or-later";
+            check(!packs([&] { auto q = plugin; q.license.clear(); return q; }(), false), "a plugin package without a license is refused");
+            check(!packs(gpl, true), "a GPL plugin package without its source is refused");
+            gpl.sourceUrl = "https://github.com/example/organ"; gpl.sourceRevision = "v2.1.0";
+            check(!packs(gpl, false), "a GPL plugin package without a license text is refused");
+            check(packs(gpl, true), "a GPL plugin package with its source and license text is read, with them");
+            auto lgpl = gpl; lgpl.license = "MIT AND (LGPL-2.1-or-later OR BSD-3-Clause)"; lgpl.sourceUrl.clear();
+            check(!packs(lgpl, true), "an expression naming the LGPL needs the source too");
+            for(const auto& [url, revision] : std::vector<std::pair<std::string, std::string>>{{"http://example.com/x", "v1"}, {"https://example.com/x", ""}, {"https://example.com/x y", "v1"}, {"https://example.com/x", "a b"}})
+            {
+                auto q = gpl; q.sourceUrl = url; q.sourceRevision = revision;
+                check(!packs(q, true), "the source " + url + " at \"" + revision + "\" is refused");
+            }
             auto pluginKind = [&](std::string m) { return m.replace(m.find("\"kind\":\"library\""), 16, "\"kind\":\"plugin\""); };
             refuse("a plugin package with items", {{"library.json", pluginKind(withBuild(bundleDigest(staged / build)))}, sound, {binary, "code"}});
             refuse("a plugin package with no plugins", {{"library.json", R"({"format":"oscairn.library","version":3,"id":"abc","name":"Pack","kind":"plugin","items":[],"plugins":[],"files":{}})"}});

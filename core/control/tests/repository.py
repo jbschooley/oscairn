@@ -97,7 +97,7 @@ with tempfile.TemporaryDirectory(prefix='oscairn-repository-') as temporary:
         folder = repo / 'packages' / plugin_id
         folder.mkdir(parents=True, exist_ok=True)
         olib = folder / f'{version}.olib'
-        run(tool, 'plugin-package', '--key', temp / 'publisher.key', olib, 'clap', plugin_id, version, 'Test Synth', f'{platform}={build}')
+        run(tool, 'plugin-package', '--license', 'MIT', '--key', temp / 'publisher.key', olib, 'clap', plugin_id, version, 'Test Synth', f'{platform}={build}')
         data = olib.read_bytes()
         record = {'format': 'oscairn.repository-release', 'version': 1, 'id': plugin_id, 'release': version, 'publisher': 'org.kick',
                   'summary': 'A test synth', 'license': 'MIT', 'tags': ['synth'], 'platforms': [platform],

@@ -40,6 +40,8 @@ jobs:
         # safety and every signature through `oscairn-sign verify`; the archive and every build
         # signed by the publisher's key; each claimed platform's build present; no build loading
         # a library from outside the system and its bundle (read from its Mach-O or ELF files by
+        # `oscairn-sign verify`); the record's license and source the archive's own (a GPL,
+        # LGPL or AGPL plugin package without its source or license texts is refused by
         # `oscairn-sign verify`); no published release or publisher key changed.
         run: >
           python3 -I .base/scripts/build-index.py --check

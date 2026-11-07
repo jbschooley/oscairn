@@ -23,7 +23,9 @@ You need `oscairn-sign`, built with Oscairn (`cmake --build build --target oscai
    ```sh
    oscairn-sign build ~/oscairn/publisher.key clap com.example.organ 2.1.0 linux-arm64 Organ.clap
    # a plugin alone: pack the signed builds into a plugin package, signed whole
-   oscairn-sign plugin-package --key ~/oscairn/publisher.key com.example.organ-2.1.0.olib clap com.example.organ 2.1.0 "Example Organ" linux-arm64=Organ.clap
+   oscairn-sign plugin-package --key ~/oscairn/publisher.key --license GPL-3.0-or-later --license-file COPYING \
+       --source https://github.com/example/organ v2.1.0 \
+       com.example.organ-2.1.0.olib clap com.example.organ 2.1.0 "Example Organ" linux-arm64=Organ.clap
    # or export the library archive (it carries Organ.clap.sig), then:
    oscairn-sign archive ~/oscairn/publisher.key com.example.organ-2.1.0.olib
    oscairn-sign verify com.example.organ-2.1.0.olib
@@ -33,12 +35,18 @@ You need `oscairn-sign`, built with Oscairn (`cmake --build build --target oscai
    bundle, such as Homebrew's in `/opt/homebrew`: a device does not have them, and the checks
    refuse such a build too. Bundle them or link them statically.
 
+   A plugin package names its license (`--license`, an SPDX expression) and carries its license
+   texts and notices (`--license-file`, each into `Licenses/`). Under the GPL, LGPL or AGPL it
+   must also name its source, the exact commit or tag (`--source <url> <revision>`), or it is
+   refused: that is the license's "directions next to the object code".
+
    A bundle holding several plugins is signed for each of them at once and packed once, each
    plugin named with `--plugin` (a preset-discovery provider in it is not listed or signed):
 
    ```sh
    oscairn-sign build ~/oscairn/publisher.key clap com.example.organ,com.example.leslie 2.1.0 linux-arm64 Organ.clap
-   oscairn-sign plugin-package --key ~/oscairn/publisher.key --plugin com.example.organ "Example Organ" \
+   oscairn-sign plugin-package --key ~/oscairn/publisher.key --license GPL-3.0-or-later --license-file COPYING \
+       --source https://github.com/example/organ v2.1.0 --plugin com.example.organ "Example Organ" \
        --plugin com.example.leslie "Example Leslie" com.example.organ-2.1.0.olib clap com.example.organ 2.1.0 "Example Organ" linux-arm64=Organ.clap
    ```
 
@@ -95,17 +103,22 @@ publisher's ID:
   "channel": "stable",
   "platforms": ["linux-arm64", "macos-arm64"],
   "requires": { "oscairn": "1.4" },
+  "source": { "url": "https://github.com/example/organ", "revision": "v2.1.0" },
   "archive": { "url": "https://example.com/releases/organ-2.1.0.olib", "sha256": "<64 hex digits>", "size": 21534720 },
   "yanked": null
 }
 ```
+
+- `source`: the archive's own `source`, exactly (`url` and the commit or tag as `revision`);
+  leave it out, or `null`, only when the archive names none. A GPL, LGPL or AGPL plugin
+  package always names one.
 
 - `archive`: an `https://` `url`, or a `path` naming the archive beside this file; its SHA-256
   and size in bytes. Under 1,900 MiB, since release assets must be under 2 GiB.
 - `platforms`: each platform the package has plugin builds for; every plugin must have a build
   for each. Leave it out for a package with no plugins.
 - `channel`: `stable` (the default) or `beta`.
-- `license`: an SPDX expression.
+- `license`: an SPDX expression; the archive's own when it names one (above).
 
 ### Revocations
 
@@ -120,7 +133,8 @@ with a `reason`. Maintainers change it, following the takedown policy.
 `scripts/build-index.py --check` from the base branch: every record's schema, each archive's
 hash, archive safety and every signature through `oscairn-sign verify`, the archive and every
 build signed by the publisher's key, each claimed platform's build, that no build loads a
-library from outside the system and its bundle (a Homebrew library, say), that a package keeps the
+library from outside the system and its bundle (a Homebrew library, say), that the record's
+`license` and `source` are the archive's, that a package keeps the
 publisher of its other releases and that publisher IDs do not nest, and no published version or
 publisher key changed. Each check RFC 0031 lists that is not built yet is its own step that says
 so with a warning. Changes outside `publishers/`, `packages/` and `revoked.json` need a
