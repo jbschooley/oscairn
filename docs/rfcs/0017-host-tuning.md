@@ -13,7 +13,7 @@ Checked when built and tested; the sections below say how.
 - [ ] 1. Performance tunings; Scala and .kbm parsing; built-in scales
 - [ ] 2. Host `clap.tuning` in the engine and workers; the Sampler reads it
 - [ ] 3. MTS-ESP master on the desktop
-- [ ] 4. Octet and the analog engine read `clap.tuning`
+- [ ] 4. Oscairn FM and the analog engine read `clap.tuning`
 - [ ] 5. Device libMTS
 - [ ] 6. Opt-in note-expression tuning
 
@@ -22,7 +22,7 @@ Checked when built and tested; the sections below say how.
 Today Oscairn has no tuning. The host doesn't implement any tuning extension (nothing in
 `core/clap-host/src` mentions it), the Sampler computes pitch from 12-TET only
 ([`src/sampler.cpp`](https://github.com/oscairn/sampler/blob/main/src/sampler.cpp)), and the Performance format has no tuning field. Two engines on
-the way already have their own tuning: Dexed, which Octet forks ([RFC 0014](0014-fm-engine.md)),
+the way already have their own tuning: Dexed, which Oscairn FM forks ([RFC 0014](0014-fm-engine.md)),
 and Surge XT, which the analog engine forks ([RFC 0015](0015-analog-modeling-engine.md)). Both
 include an MTS-ESP client (`MTS_RegisterClient` in Dexed's `source/PluginProcessor.cpp` and
 Surge's `src/common/SurgeStorage.cpp`).
@@ -37,7 +37,7 @@ The checks below test that design before this RFC commits to it.
 - A Performance stores its tuning: one default tuning, plus one per Part where it differs.
   Each tuning is Scala text (`.scl` plus an optional `.kbm`). A Performance plays the same
   wherever it is loaded, or its load report says which plugins can't follow its tuning.
-- Native engines (the Sampler, Octet and the analog engine) read the host's tuning through
+- Native engines (the Sampler, Oscairn FM and the analog engine) read the host's tuning through
   `clap.tuning`, per Part, at sample offsets.
 - Third-party plugins follow it through `clap.tuning` where they support it, or as MTS-ESP
   clients where they don't. A plugin that supports neither plays 12-TET, and the load report
@@ -210,7 +210,7 @@ period-degree cases.
   regions such as drums stay untuned. The voice re-reads the tuning each block if the tuning
   is marked dynamic. An unmapped key starts no voice and reports `NOTE_END`, as an
   out-of-range key does now.
-- **Octet and the analog engine:** both forks follow this order: host `clap.tuning` if
+- **Oscairn FM and the analog engine:** both forks follow this order: host `clap.tuning` if
   offered, then their own stored tuning, then MTS-ESP, then 12-TET. The middle two follow
   the SDK's advice that local tuning should override MTS-ESP (`libMTSClient.h` step 7). In
   another host they behave as today, and inside Oscairn host tuning always wins.
@@ -314,7 +314,7 @@ compete with ODDSound's library at the same path.
 | 1 | Performance `tunings` and `parts[].tuning`; Scala and `.kbm` parser; tables; built-in `.scl` set with sources | Parser fixtures (including unmapped keys and reference keys); identical tables on macOS and Linux arm64; save, reopen and convert round trips |
 | 2 | Host `clap.tuning` (pool, events, `get_relative`, `should_play`) in the engine and the worker shim; the Sampler reads it | Sampler pitch within 0.1 cent of the table for every key; unmapped keys start no voice; identical renders in the engine and in a worker; no allocation on the audio path |
 | 3 | MTS-ESP master on the desktop with the user's libMTS: register on demand, global and channel tables, conflict and stale-flag rules, client detection, load report | Stock Surge XT and Dexed, in the engine and in workers, play the Performance's tuning; a second master is refused with the warning; a killed engine is recovered without asking; client detection is right for each reference plugin |
-| 4 | Octet and the analog engine read `clap.tuning` with the stated order (on the forks' `oscairn` branches) | The same pitch tests as the Sampler; in a DAW with an MTS-ESP master they still follow it |
+| 4 | Oscairn FM and the analog engine read `clap.tuning` with the stated order (on the forks' `oscairn` branches) | The same pitch tests as the Sampler; in a DAW with an MTS-ESP master they still follow it |
 | 5 | Device libMTS, (a) or (b) after counsel | Stock Surge XT in a worker on the device follows the Performance; sandboxed workers can read the tables |
 | 6 | Opt-in note-expression tuning per node | A note-expression fixture plugin plays in tune; the default is off |
 
@@ -324,7 +324,7 @@ compete with ODDSound's library at the same path.
   ship a library of the same interface under that file name? Does "MTS-ESP" in the UI need
   ODDSound's permission?
 - Ask ODDSound whether they prefer (a), (b), or publishing libMTS's source.
-- Whether `clap.tuning` changes before it leaves draft. Octet and the analog engine are
+- Whether `clap.tuning` changes before it leaves draft. Oscairn FM and the analog engine are
   first-party and can follow it, but third-party adoption is unknown.
 - Whether the MIDI Tuning Standard is worth sending as SysEx to plugins that accept it. The
   host has no SysEx path today, and the MTS-ESP client uses SysEx only when no master is

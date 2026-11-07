@@ -324,7 +324,7 @@ provide (recommended; none is built yet):
 | --- | --- | --- |
 | Oscairn Organ (setBfree) | Inside the plugin: the 55 programs | The program number, `0` to `54` |
 | Oscairn Analog (Surge) | Files: the factory and user patch folders, type `fxp` | None: each file is one patch |
-| Octet (Dexed) | Files: the cartridge folders, type `syx` | The voice in the cartridge, `0` to `31`, each named from the cartridge |
+| Oscairn FM (Dexed) | Files: the cartridge folders, type `syx` | The voice in the cartridge, `0` to `31`, each named from the cartridge |
 
 Limits: 4096 presets per plugin library, 64 locations and file types per provider, 10,000
 files per folder and 16 folder levels, names up to 255 bytes, locations and load keys up to

@@ -320,7 +320,7 @@ plugin implements.
   held voice of a mono or legato context, nor one of a context at or under its reserve unless
   the new voice is that context's; released before held; the new voice's own context first;
   lower priority first; the quietest, then the oldest. A voice given up fades over the choke
-  time; one is cut only when the pool has no free slot, a fading one first. This is what Octet's
+  time; one is cut only when the pool has no free slot, a fading one first. This is what Oscairn FM's
   shared pool needs (released and quiet voices before held ones, never a held mono key, the same
   sound's voices first, each part's reserve), so the forks can adopt it in place of their own
   cross-sound stealing. The Engine uses this order when its pool is full whether or not the

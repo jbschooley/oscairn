@@ -1142,7 +1142,7 @@ Proposed 2026-11-05. Measured first: a switch between two Performances of the sa
 Synths (native contexts) uses none of them. The first switch loads two new instances, the middle
 rule keeping the outgoing two warm; switching back takes the warm ones, which hold their state and
 are reset. A note held through the first switch keeps its whole instance ringing out beside the new
-one. Every instrument with native contexts goes this way, sfizz and Octet included (both
+one. Every instrument with native contexts goes this way, sfizz and Oscairn FM included (both
 draft 5): a node is a whole instance, given a whole snapshot, and sfizz loads its samples again
 for every snapshot given to an instance.
 
@@ -1259,7 +1259,7 @@ runs each (milliseconds from `loadPerformance` until published):
 | A to B (4 parts), workers | 24 ms, 4 loaded | 22–26 ms, 2 loaded, 2 beside |
 
 Memory follows: one instance per Basic Synth node instead of two once switched back and forth.
-Neither sfizz nor Octet offers `oscairn.sound-snapshots` yet, so the real Performances measured
+Neither sfizz nor Oscairn FM (then Octet) offered `oscairn.sound-snapshots` yet, so the real Performances measured
 above are unchanged; each needs the table and `get_extension` line
 ([the porting guide](../plugin-porting.md#instant-performance-changes)), and a sfizz that shares
 samples between its contexts to skip loading them again.
