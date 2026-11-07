@@ -55,6 +55,19 @@ namespace oscairn
     // part of a build and are left out, as archives leave them out.
     std::string bundleDigest(const std::filesystem::path& build);
 
+    // What a plugin build loads from outside the platform's system libraries and the build itself,
+    // one line per problem ("<file in the build>: <library or rpath> (why)"); empty when nothing.
+    // Reads each Mach-O (thin or fat) and ELF file in the build directly, whatever this platform
+    // is. macOS: every LC_LOAD_DYLIB, weak, reexport, lazy and upward library under /usr/lib/ or
+    // /System/, or in the bundle through @loader_path or @rpath (an @rpath library found through
+    // a system rpath counts as the system's), and every rpath a system folder or @loader_path;
+    // @executable_path is the host's folder, so it is outside. Linux: every DT_NEEDED one of the
+    // libraries every Oscairn image carries (docs/library-archive.md), or found in the bundle
+    // through an $ORIGIN rpath, and no rpath but $ORIGIN's. A file that does not parse is a
+    // problem; other files (resources, Windows DLLs) are not checked. Untrusted input: every read
+    // is bounds-checked.
+    std::vector<std::string> outsideLibraries(const std::filesystem::path& build);
+
     // The manifest, library.json, as the archive and an installed library hold it.
     std::string manifestJson(const Package& package);
 

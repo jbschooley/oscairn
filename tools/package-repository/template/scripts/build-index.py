@@ -3,8 +3,8 @@
 """Builds an Oscairn repository (RFC 0031) from packages/, publishers/ and revoked.json.
 
 Checks every release on the way: the records' schema, each archive's hash, archive safety and
-every signature (through `oscairn-sign verify`), the publisher's key, and the platform builds
-each release claims. With --previous, also that no published release changed. Writes the
+every signature (through `oscairn-sign verify`), the publisher's key, the platform builds each
+release claims, and that no build loads libraries from outside the system and its bundle. With --previous, also that no published release changed. Writes the
 repository's static tree to --out:
 
     repository.json            the root, unsigned: sign it with `oscairn-sign file`
@@ -155,7 +155,8 @@ def fetch(record, record_path, cache, problems):
 
 
 def verify(tool, archive, where, problems):
-    """`oscairn-sign verify`: archive safety, every hash and every signature. Its report, or None."""
+    """`oscairn-sign verify`: archive safety, every hash and every signature, and each build's
+    libraries from outside the system and its bundle. Its report, or None."""
     try:
         run = subprocess.run([tool, "verify", str(archive)], capture_output=True, text=True, timeout=900)
     except (OSError, subprocess.TimeoutExpired) as e:
@@ -164,13 +165,15 @@ def verify(tool, archive, where, problems):
     if run.returncode != 0:
         problems.add(where, f"the archive is refused: {run.stderr.strip()}")
         return None
-    report = {"archive": None, "builds": []}
+    report = {"archive": None, "builds": [], "outside": []}
     for line in run.stdout.splitlines():
         words = line.split()
         if words[:1] == ["archive"] and len(words) == 3:
             report["archive"] = (words[1], words[2])
         elif words[:1] == ["build"] and len(words) == 6:
             report["builds"].append((words[1], words[2], words[3], words[4], words[5].split(",")))
+        elif words[:1] == ["outside"] and len(words) >= 6:
+            report["outside"].append(line.split(None, 5)[1:])  # format, ID, version, platform, what
     return report
 
 
@@ -242,6 +245,8 @@ def read_release(path, root, publishers, tool, cache, problems):
     for fmt, plugin, version, platform, signers in report["builds"]:
         if signer not in signers:
             problems.add(path, f"the {platform} build of {fmt} {plugin} {version} is not signed by its publisher's key {signer}")
+    for fmt, plugin, version, platform, what in report["outside"]:
+        problems.add(path, f"the {platform} build of {fmt} {plugin} {version} loads a library from outside the system and its bundle, which a device does not have: {what}")
     plugins = {(b[0], b[1], b[2]) for b in report["builds"]}
     for plugin in sorted(plugins):
         have = {b[3] for b in report["builds"] if b[:3] == plugin}

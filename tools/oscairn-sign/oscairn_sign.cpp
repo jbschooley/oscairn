@@ -2,9 +2,9 @@
 //
 // oscairn-sign: package signatures (RFC 0006) for plugin authors and publishers. Makes a key,
 // signs a plugin build (a .sig beside it, which an export carries), packs builds into a plugin
-// package, signs an archive whole, and
-// checks an archive's signatures, and signs and checks a repository's files (RFC 0031). A private
-// key is never printed.
+// package (refusing a build that loads libraries from outside the system and its bundle), signs
+// an archive whole, checks an archive's signatures and its builds' libraries, and signs and
+// checks a repository's files (RFC 0031). A private key is never printed.
 #include "oscairn/package.h"
 #include "oscairn/signing.h"
 #include <algorithm>
@@ -30,13 +30,16 @@ namespace
                    "      several plugins, each signed\n"
                    "  oscairn-sign archive <key-file> <archive.olib>\n"
                    "      sign an archive whole (library.sig), replacing any signature over it\n"
-                   "  oscairn-sign plugin-package [--key <key-file>] [--plugin <id> <name>]... <archive.olib> <format> <id> <version> <name> <platform>=<build>...\n"
+                   "  oscairn-sign plugin-package [--key <key-file>] [--plugin <id> <name>]... [--allow-outside-libraries] <archive.olib> <format> <id> <version> <name> <platform>=<build>...\n"
                    "      pack plugin builds, each with the signatures in <build>.sig beside it, into a\n"
                    "      plugin package (an archive with no items) with that ID and name; with --key,\n"
                    "      signed whole. A bundle holding several plugins names each with --plugin (else\n"
-                   "      its one plugin is <id>, named <name>); <build>.sig signs each of them\n"
+                   "      its one plugin is <id>, named <name>); <build>.sig signs each of them. A build\n"
+                   "      loading libraries from outside the system and its bundle is refused unless\n"
+                   "      --allow-outside-libraries, which says what it packed anyway\n"
                    "  oscairn-sign verify [--into <folder>] <archive.olib>\n"
-                   "      check every signature and hash in an archive and say who signed what;\n"
+                   "      check every signature and hash in an archive and say who signed what, and each\n"
+                   "      build's libraries from outside the system and its bundle (lines \"outside ...\");\n"
                    "      <folder>, which must not exist yet, is where it is unpacked to check (default: a\n"
                    "      folder in the OS temp folder; pick one on the file system with room for it)\n"
                    "  oscairn-sign file <key-file> <file> <signature-file>\n"
@@ -103,10 +106,13 @@ int main(int argc, char** argv)
             std::vector<std::string> rest(a.begin() + 1, a.end());
             std::unique_ptr<signing::Key> key;
             std::vector<std::pair<std::string, std::string>> listed; // --plugin: each plugin the bundle holds, by ID and name
+            bool allowOutside = false;
+            std::vector<std::string> outside; // packed anyway, with --allow-outside-libraries: said when done
             while(!rest.empty() && rest[0].rfind("--", 0) == 0)
             {
                 if(rest[0] == "--key" && rest.size() > 1) { key = std::make_unique<signing::Key>(signing::loadKey(rest[1])); rest.erase(rest.begin(), rest.begin() + 2); }
                 else if(rest[0] == "--plugin" && rest.size() > 2) { listed.push_back({rest[1], rest[2]}); rest.erase(rest.begin(), rest.begin() + 3); }
+                else if(rest[0] == "--allow-outside-libraries") { allowOutside = true; rest.erase(rest.begin()); }
                 else return usage();
             }
             if(rest.size() < 6) return usage();
@@ -133,6 +139,15 @@ int main(int argc, char** argv)
                 if(!knownPlatform(forPlatform)) throw std::runtime_error("unknown platform " + forPlatform);
                 if(!fs::exists(build)) throw std::runtime_error("no build " + build.string());
                 const auto digest = bundleDigest(build);
+                // Libraries from outside the system and the bundle are not on the device it installs on.
+                for(const auto& problem : outsideLibraries(build)) outside.push_back(forPlatform + " " + problem);
+                if(!outside.empty() && !allowOutside)
+                {
+                    std::string list;
+                    for(const auto& o : outside) list += "\n  " + o;
+                    throw std::runtime_error("the build loads libraries from outside the system and its bundle, which a device does not have:" + list +
+                                             "\nbundle them (or link them statically), or pack it anyway with --allow-outside-libraries");
+                }
                 // The bundle is packed once for every plugin it holds; each signature goes to the plugin it is over.
                 std::vector<std::vector<signing::Signature>> signatures(p.plugins.size());
                 for(const auto& s : signing::readSignatures(build.string() + ".sig"))
@@ -151,6 +166,7 @@ int main(int argc, char** argv)
             try { readPackage(rest[0], {}); } catch(...) { fs::remove(rest[0]); throw; } // its ID, format and bundles as a reader takes them
             std::printf("packed %s %s %s with %zu builds%s\n", format.c_str(), ids.c_str(), version.c_str(), p.plugins[0].builds.size(),
                         key ? (", signed by " + signing::keyId(key->publicKey)).c_str() : "");
+            for(const auto& o : outside) std::printf("packed with --allow-outside-libraries, loading from outside the system and its bundle: %s\n", o.c_str());
             return 0;
         }
         if(a.size() >= 2 && a[0] == "verify" && (a.size() == 2 || (a.size() == 4 && a[1] == "--into")))
@@ -158,11 +174,20 @@ int main(int argc, char** argv)
             std::random_device random;
             const auto into = a.size() == 4 ? fs::path(a[2]) : fs::temp_directory_path() / ("oscairn-verify-" + std::to_string(random()) + std::to_string(random()));
             const auto p = readPackage(a.back(), into); // throws on any signature or hash that does not hold
+            std::vector<std::string> outside; // "<format> <id> <version> <platform> <problem>", each build's
+            try
+            {
+                for(const auto& plugin : p.plugins)
+                    for(const auto& b : plugin.builds)
+                        for(const auto& problem : outsideLibraries(into / b.path)) outside.push_back(plugin.format + " " + plugin.id + " " + plugin.version + " " + b.platform + " " + problem);
+            }
+            catch(...) { std::error_code ignored; fs::remove_all(into, ignored); throw; }
             std::error_code ignored; fs::remove_all(into, ignored);
             std::printf("archive %s %s\n", p.id.c_str(), p.signature.key.empty() ? "unsigned" : signing::keyId(p.signature.key).c_str());
             for(const auto& i : p.items) std::printf("item %s %s %s\n", i.kind.c_str(), i.id.c_str(), signers(i.signatures).c_str());
             for(const auto& plugin : p.plugins)
                 for(const auto& b : plugin.builds) std::printf("build %s %s %s %s %s\n", plugin.format.c_str(), plugin.id.c_str(), plugin.version.c_str(), b.platform.c_str(), signers(b.signatures).c_str());
+            for(const auto& o : outside) std::printf("outside %s\n", o.c_str());
             return 0;
         }
         if(a.size() == 4 && a[0] == "file")

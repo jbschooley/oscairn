@@ -12,6 +12,7 @@ import gzip
 import hashlib
 import json
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -45,9 +46,9 @@ def main(tool):
             made[name] = (key_id, public)
 
         # A signed archive: one CLAP build for linux-arm64, signed by the publisher, and the whole.
-        def archive(path, signed=True, key="publisher", plugin="com.example.organ"):
+        def archive(path, signed=True, key="publisher", plugin="com.example.organ", content=b"not really a plugin"):
             build = temp / "Organ.clap"
-            build.write_bytes(b"not really a plugin")
+            build.write_bytes(content)
             Path(str(build) + ".sig").unlink(missing_ok=True)
             out = run(tool, "build", keys / f"{key}.key", "clap", plugin, "2.1.0", "linux-arm64", build)
             assert out.returncode == 0, out.stderr
@@ -187,6 +188,13 @@ def main(tool):
         refused(dict(release, archive=dict(release["archive"], sha256=hashlib.sha256(unsigned).hexdigest(), size=len(unsigned))),
                 "not signed by its publisher's key", "an unsigned archive is refused", unsigned)
         refused(dict(release, publisher="org.other"), "no publishers/org.other.json", "a release from an unknown publisher is refused")
+        # A build linking a Homebrew library: a 64-bit Mach-O bundle with one LC_LOAD_DYLIB.
+        name = b"/opt/homebrew/lib/libfftw3.3.dylib\0"
+        command = struct.pack("<IIIIII", 0xC, (24 + len(name) + 7) & ~7, 24, 0, 0, 0) + name
+        command += b"\0" * (((24 + len(name) + 7) & ~7) - len(command))
+        brew = archive(temp / "brew.olib", content=struct.pack("<IIIIIIII", 0xFEEDFACF, 0x0100000C, 0, 8, 1, len(command), 0, 0) + command).read_bytes()
+        refused(dict(release, archive=dict(release["archive"], sha256=hashlib.sha256(brew).hexdigest(), size=len(brew))),
+                "loads a library from outside the system and its bundle", "a build linking a Homebrew library is refused", brew)
         refused(dict(release, archive=dict(release["archive"], size=2**31)), "under 2 GiB", "an archive too large for a release asset is refused")
 
         # A package keeps its publisher, and publisher IDs do not nest: the owner of `io.github`

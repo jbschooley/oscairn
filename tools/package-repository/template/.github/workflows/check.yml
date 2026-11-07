@@ -35,11 +35,12 @@ jobs:
           repository: ${{ env.OSCAIRN_REPOSITORY }}
           commit: ${{ env.OSCAIRN_COMMIT }}
 
-      - name: Schema, archive safety, signatures, platform builds and immutable versions
+      - name: Schema, archive safety, signatures, platform builds, libraries and immutable versions
         # Every record's schema; each archive fetched and checked against its SHA-256; archive
         # safety and every signature through `oscairn-sign verify`; the archive and every build
-        # signed by the publisher's key; each claimed platform's build present; no published
-        # release or publisher key changed.
+        # signed by the publisher's key; each claimed platform's build present; no build loading
+        # a library from outside the system and its bundle (read from its Mach-O or ELF files by
+        # `oscairn-sign verify`); no published release or publisher key changed.
         run: >
           python3 -I .base/scripts/build-index.py --check
           --oscairn-sign "${{ steps.tools.outputs.path }}"

@@ -610,7 +610,12 @@ What changes for the plugin:
   ([format](performance-format.md)). A Performance made on a Mac opens on Linux with a stand-in
   unless a Linux build of the same version went with it or is installed. Keep the ID and
   version stable across platforms, and keep everything the plugin needs inside its bundle;
-  files it installs elsewhere do not go with it. When a device's store already has a different
+  files it installs elsewhere do not go with it. Libraries too: a build may load only the
+  system's libraries and its bundle's own (macOS: `/usr/lib/`, `/System/`, `@loader_path` and
+  `@rpath` into the bundle; Linux: glibc, libstdc++, libgcc_s, ALSA and the image's X11 and font
+  libraries, or `$ORIGIN`), so link Homebrew's or `/usr/local`'s statically or bundle them.
+  `oscairn-sign plugin-package` and `oscairn-plugin-check` check it
+  ([the rules](library-archive.md#plugin-packages)). When a device's store already has a different
   build of the same version for a platform, it keeps that one and notes that the incoming build
   was not installed, so give a changed build a new version. LV2 plugins
   are not packaged; they must be installed on each device.

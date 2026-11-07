@@ -408,6 +408,7 @@ folder of signed archives into a repository, ready to upload anywhere.
 | --- | --- |
 | Schema | The manifest, item documents and type manifests are valid (RFC 0023) |
 | Archive safety | Every rule for reading an untrusted archive ([format](../library-archive.md#reading-one)) |
+| Libraries | No plugin build loads a library from outside the platform's system libraries and its own bundle, read from its Mach-O and ELF files ([rules](../library-archive.md#plugin-packages); built 2026-11-07, `package-repository-index`, `control-libraries`) |
 | Signatures | The package signature and every build signature verify with the publisher's key |
 | Publisher | Every release of a package names the same publisher, and no publisher's ID is another's followed by a `.` and more: otherwise the owner of `io.github` could publish a newer `io.github.alice.synth`, signed with its own key, and take the package over |
 | Platforms | Each platform the package claims has its build; a first-party package has one for every supported profile ([RFC 0006](0006-packages-and-portability.md#platform-builds-and-hardware)) |

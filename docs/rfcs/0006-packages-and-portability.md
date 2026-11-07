@@ -40,7 +40,11 @@ Checked when built and tested; the sections below say how.
       `control-archives`, `desktop-gaps`; a bundle holding several plugins packed once, each
       plugin listed and signed, all installed into the store, preset-discovery providers neither
       listed nor signed, 2026-11-07, `control-archives`, `control-package`,
-      `package-repository-index`. Not yet: re-judging store builds
+      `package-repository-index`; a build loading libraries from outside the system and its
+      bundle refused by `oscairn-sign plugin-package` (unless `--allow-outside-libraries`, which
+      it reports), listed by `oscairn-sign verify` and reported by `oscairn-plugin-check`, Mach-O
+      and ELF read directly, 2026-11-07, `control-libraries`. Not yet: Windows builds' libraries,
+      re-judging store builds
       when a key is revoked, revocations through system updates, a product profile refusing
       unsigned code, apps (not packaged yet), trusting a key from the install prompt, repositories
       requiring signatures, pairing)

@@ -74,6 +74,34 @@ every byte of the provider too, and the host finds the provider by scanning the 
 bundle. A signature in `<build>.sig` over an ID that is not packed, such as a provider's, is
 refused like one over another build.
 
+**Libraries a build loads.** A plugin build must load nothing from outside the platform's system
+libraries and its own bundle: a device has neither Homebrew nor the author's other libraries.
+`oscairn-sign` reads each Mach-O (thin or fat) and ELF file in a build itself, with no `otool`
+or `readelf`, so a macOS build is checked on Linux too:
+
+- **macOS:** every `LC_LOAD_DYLIB`, `LC_LOAD_WEAK_DYLIB`, `LC_REEXPORT_DYLIB`,
+  `LC_LAZY_LOAD_DYLIB` and `LC_LOAD_UPWARD_DYLIB` names a library under `/usr/lib/` or
+  `/System/`, or one in the bundle through `@loader_path` or `@rpath` (an `@rpath` library is
+  the system's when an rpath is a system folder), and every `LC_RPATH` is a system folder or
+  under `@loader_path`. `@executable_path` is the host application's folder, never the plugin's
+  bundle, so it is outside; so are `/opt/homebrew`, `/usr/local` and every other path.
+- **Linux:** every `DT_NEEDED` is one of the libraries every Oscairn image carries, or a file in
+  the bundle found through an `$ORIGIN` rpath, and every `DT_RPATH` and `DT_RUNPATH` entry starts
+  with `$ORIGIN`. The libraries: glibc's (`libc.so.6`, `libm.so.6`, `libdl.so.2`,
+  `libpthread.so.0`, `librt.so.1`, `ld-linux-aarch64.so.1`, `ld-linux-x86-64.so.2`), GCC's
+  (`libgcc_s.so.1`, `libstdc++.so.6`), `libasound.so.2` (the host does audio and MIDI, but JUCE
+  plugins link ALSA through `juce_audio_devices` even when they never open a device), and the
+  desktop's windowing and font libraries the image builds with it (`libX11.so.6`,
+  `libXext.so.6`, `libXrandr.so.2`, `libXinerama.so.1`, `libXcursor.so.1`, `libXrender.so.1`,
+  `libfreetype.so.6`, `libfontconfig.so.1`). Not `libGL`: the image has none.
+- A Mach-O or ELF file that does not parse is a problem too; other files (resources, scripts)
+  are not checked, and Windows builds are not checked yet.
+
+`oscairn-sign plugin-package` refuses such a build, listing each library, unless given
+`--allow-outside-libraries`, which packs it and says what it packed anyway; `oscairn-sign
+verify` lists each as an `outside` line, the package repository's checks refuse it, and
+`oscairn-plugin-check` reports it.
+
 Apps are to be packaged the same way ([RFC 0022](rfcs/0022-apps-and-requests.md) step 2): a
 kind of their own, `app`, with an `apps` list beside `plugins`, each app signed as
 [RFC 0006](rfcs/0006-packages-and-portability.md#signatures) describes. Not built: a reader

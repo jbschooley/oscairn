@@ -11,7 +11,8 @@
 // for --install on that platform: installed fresh there, it must open from the store and play.
 // --juce-state sets an attribute in a JUCE plugin's saved state (its binary XML), as choosing a
 // program in its window would; Airwindows Consolidated picks its effect this way
-// (currentProcessorName=Chorus). Prints one line per check and the renders' levels.
+// (currentProcessorName=Chorus). Each build is checked for libraries it loads from outside the
+// system and its bundle, as oscairn-sign refuses them. Prints one line per check and the renders' levels.
 #include "oscairn/session.h"
 #include "oscairn/package.h"
 #include "../../plugin-host/src/StateFiles.h"
@@ -158,6 +159,15 @@ int main(int argc, char** argv)
     }
     try
     {
+        // Libraries from outside the system and the bundle are not on a device (docs/library-archive.md).
+        std::vector<std::string> checked{plugin};
+        for(const auto& build : builds) checked.push_back(build.second);
+        for(const auto& path : checked)
+        {
+            std::string list;
+            for(const auto& problem : outsideLibraries(path)) list += "\n  " + problem;
+            check(list.empty(), "loads only the system's libraries and its own bundle: " + path + list);
+        }
         state_files::TemporaryDirectory temp;
         const auto archive = temp.path / "Check.olib";
         std::vector<float> saved;
