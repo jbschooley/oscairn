@@ -450,24 +450,19 @@ Decided by the owner, 2026-11-07:
   own containment (its memory and CPU reservation, the hang rule, recycling).
 - **Unsigned apps on the KICK** are refused by default, as unsigned plugin builds are, unless the
   user explicitly allows one.
+- **Apps survive an engine restart:** the shell supervises apps (start, limits, restart, stderr),
+  not the engine, asks the restarted engine for each app's connection and passes it over
+  (`SCM_RIGHTS`); the app library reconnects and resyncs, as the desktop's own connection
+  already does.
+- **Performance moves out of the shell's process last,** after Setlist, Library, Groovebox,
+  Recordings, the launcher and Settings.
+- **The hang timings** are 5 seconds for the app in front ("not responding", Wait or Close) and 10
+  for one behind (killed), to be revisited from measurements on the device.
+- **Built-in apps update from the repository too,** between images, as ordinary signed apps; the
+  image's version stays as the fallback when an update does not start.
 - **Background control** is a permission: an app behind may keep the pads and knobs when the user
   grants it `background` (a sequencer driving pads while another app is shown); without it the
   controls follow the screen.
-
-For the owner, from [what an app is](#what-an-app-is):
-
-- **Apps and an engine restart:** with the engine as supervisor, apps restart with it and must
-  keep their state saved. Surviving it instead costs little: the shell already starts the engine,
-  reconnects and re-attaches when it drops (`hosts/standalone/Engine.cpp`), so the shell would
-  supervise apps instead (the same code, in another process), ask the new engine for each app's
-  connection and pass it over (`SCM_RIGHTS`), and the app library reconnects and resyncs. No new
-  process; a few hundred lines and their tests. Apps would then depend on the shell, the simpler
-  process, rather than the engine. Recommended: survive it.
-- **Performance leaving the shell's process:** last in the order above; is that the right place,
-  given the stage depends on it?
-- **The hang timings:** 5 seconds in front, 10 behind, as proposed?
-- **Built-in apps' updates:** with the image only, or from the repository between images
-  (RFC 0031's open question)?
 
 ## Ruled out
 
