@@ -569,12 +569,13 @@ int main(int argc, char** argv)
             Session m(48000, 64);
             const auto home = temp.path / "m";
             const auto library = home / "Libraries" / "m.cut";
-            // A copy that fails partway, as a full disk makes it: the item's folder is made, then
-            // nothing can be added to it (an inherited macOS ACL; root is not held by it).
+            // An item that cannot be moved in, nor copied in its place, as a full disk or a
+            // permission makes it: nothing can be added to the folder it goes in or to what is made
+            // there (a macOS ACL, on the folder and inherited; root is not held by it).
 #ifdef __APPLE__
             if(::geteuid() != 0)
             {
-                auto failCopiesInto = [&](const fs::path& folder) { fs::create_directories(folder); return run("chmod +a 'everyone deny add_file,add_subdirectory,file_inherit,directory_inherit,only_inherit' " + shell(folder)).first == 0; };
+                auto failCopiesInto = [&](const fs::path& folder) { fs::create_directories(folder); return run("chmod +a 'everyone deny add_file,add_subdirectory,file_inherit,directory_inherit' " + shell(folder)).first == 0; };
                 auto clear = [&](const fs::path& folder) { run("chmod -N " + shell(folder)); };
                 check(failCopiesInto(home / "Sounds"), "an ACL makes copies into the user's Sounds fail");
                 bool threw = false;

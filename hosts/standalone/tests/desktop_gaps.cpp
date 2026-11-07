@@ -353,6 +353,25 @@ int main(int argc, char** argv)
                           "a plugin package lists its plugins under Plugins with their signers, without a choice of how: " + (shown.size() > 1 ? shown[1] : std::string()));
                     snapshot(install, "install-plugin");
                 }
+                // A package repository's listing (RFC 0031): each package's newest version this
+                // device can install with its Install button, or, disabled, why it cannot.
+                {
+                    Control::PackageJob listing; listing.name = "Test repository"; listing.repository = "org.example.test";
+                    listing.packages.push_back({"org.example.organ", "Organ", "A tonewheel organ", "MIT", "Example", "0123456789abcdef", {},
+                                                {{"1.0.0", "stable", "", "", 1000, 2048}, {"1.2.0", "stable", "", "", 1000, 4096}, {"2.0.0", "stable", "", "it needs a system update: Oscairn 9 or later", 1000, 4096}, {"1.3.0", "stable", "bad", "", 1, 1}}});
+                    listing.packages.push_back({"org.example.other", "Other", "", "MIT", "Example", "0123456789abcdef", {}, {{"1.0.0", "stable", "", "it has no build for this device (macos-arm64)", 1, 1}}});
+                    standalone::RepositoryChoices choices(listing);
+                    standalone::setDesktopMode(choices, 1); choices.resized();
+                    std::string installed;
+                    choices.onInstall = [&](const std::string& id, const std::string& version) { installed = id + " " + version; };
+                    choices.installs[0]->triggerClick();
+                    juce::MessageManager::getInstance()->runDispatchLoopUntil(50);
+                    check(choices.rows.size() == 2 && choices.rows[0]->getText().startsWith("Organ 1.2.0, ") && choices.installs[0]->isEnabled() && installed == "org.example.organ 1.2.0",
+                          "a package offers its newest version this device can install, not a yanked or incompatible one: " + choices.rows[0]->getText().toStdString() + ", " + installed);
+                    check(choices.rows[1]->getText() == "Other: cannot be installed here, it has no build for this device (macos-arm64)" && !choices.installs[1]->isEnabled(),
+                          "one it cannot install says why, its button disabled: " + choices.rows[1]->getText().toStdString());
+                    snapshot(choices, "repository-choices");
+                }
                 // An archive of both kinds, mixed: its Performances under one heading, then its
                 // Sounds under another, in the archive's order, no kind after a name; still all ticked.
                 {

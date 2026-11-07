@@ -286,6 +286,24 @@ namespace oscairn
         virtual std::vector<TrustedKey> trustedKeys() = 0;
         virtual void setTrustedKey(const TrustedKey& key) = 0;
         virtual void removeTrustedKey(const std::string& id) = 0;
+        // Package repositories (RFC 0031): a folder (a disk, a USB drive or a share) holding a
+        // repository's signed root, index and blobs. Its root key must be trusted for
+        // "repositories"; every signature and hash is checked, and a root older than one seen is
+        // refused. Reading and installing run off the control thread as a job: these return its
+        // number at once, and packageJob tells how it goes (one job at a time). List: what it
+        // offers, each version with why this device cannot install it (incompatible), if so.
+        // Install: one package, as a locked library (a plugin package's builds into the store), at
+        // `version` or the newest stable one this device can install that is not yanked; only this
+        // device's plugin builds are installed, under installArchive's rules for code.
+        struct RepositoryVersion { std::string version, channel, yanked, incompatible; uint64_t size = 0, installed = 0; };
+        struct RepositoryPackage { std::string id, name, summary, license, publisher, publisherKey; std::vector<std::string> tags; std::vector<RepositoryVersion> versions; };
+        // state: "running", "done" or "failed" (error says why). rootKey: the repository's root key
+        // once read, so a refusal for an untrusted one can offer to trust it. packages: a listing's;
+        // package and version: what an install installed, and installed what installArchive returns.
+        struct PackageJob { uint64_t id = 0; std::string state, error, repository, name, rootKey; uint64_t serial = 0; std::vector<RepositoryPackage> packages; std::string package, version; Installed installed; };
+        virtual uint64_t listRepository(const std::string& source) = 0;
+        virtual uint64_t installFromRepository(const std::string& source, const std::string& id, const std::string& version = {}, bool acceptUnsignedCode = false) = 0;
+        virtual PackageJob packageJob(uint64_t id) = 0;
         // Sounds (RFC 0021): a part saved to the library, without its seat. Wires that cross the
         // part's edge are not saved and are listed in `left`. Save writes a new revision of the
         // Sound the part came from (renamed when name is given); asNew, or a part from no Sound,

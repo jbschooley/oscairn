@@ -585,6 +585,26 @@ namespace oscairn
         impl_->call("trust.set","{\"key\":"+quote(k.key)+",\"name\":"+quote(k.name)+",\"scope\":"+quoted(k.scope)+",\"revoked\":"+(k.revoked?"true":"false")+'}');
     }
     void RemoteControl::removeTrustedKey(const std::string& id) { impl_->call("trust.remove","{\"id\":"+quote(id)+'}'); }
+    uint64_t RemoteControl::listRepository(const std::string& source) {
+        auto d=impl_->call("packages.list","{\"source\":"+quote(source)+'}');return uint64_t(integer(field(field(d.get(),"result"),"job")));
+    }
+    uint64_t RemoteControl::installFromRepository(const std::string& source,const std::string& id,const std::string& version,bool acceptUnsignedCode) {
+        auto d=impl_->call("packages.install","{\"source\":"+quote(source)+",\"id\":"+quote(id)+(version.empty()?std::string():",\"version\":"+quote(version))+",\"acceptUnsignedCode\":"+(acceptUnsignedCode?"true":"false")+'}');
+        return uint64_t(integer(field(field(d.get(),"result"),"job")));
+    }
+    // Asking about an install that has unpacked moves it into place, which takes a moment for a large one.
+    Control::PackageJob RemoteControl::packageJob(uint64_t id) {
+        auto d=impl_->call("packages.job","{\"job\":"+std::to_string(id)+'}',120000);auto r=field(d.get(),"result");
+        PackageJob j{uint64_t(integer(field(r,"job"))),string(field(r,"state")),string(field(r,"error")),string(field(r,"repository")),string(field(r,"name")),string(field(r,"rootKey")),uint64_t(integer(field(r,"serial"))),{},string(field(r,"package")),string(field(r,"version")),{}};
+        for(auto x:array(field(r,"packages"))){
+            RepositoryPackage p{string(field(x,"id")),string(field(x,"name")),string(field(x,"summary")),string(field(x,"license")),string(field(x,"publisher")),string(field(x,"publisherKey")),strings(field(x,"tags")),{}};
+            for(auto v:array(field(x,"versions")))p.versions.push_back({string(field(v,"version")),string(field(v,"channel")),string(field(v,"yanked")),string(field(v,"incompatible")),uint64_t(integer(field(v,"size"))),uint64_t(integer(field(v,"installed")))});
+            j.packages.push_back(std::move(p));
+        }
+        const auto installed=field(r,"installed");
+        j.installed={static_cast<uint32_t>(integer(field(installed,"added"))),static_cast<uint32_t>(integer(field(installed,"skipped"))),strings(field(installed,"notes")),signers(field(installed,"code"))};
+        return j;
+    }
     void RemoteControl::uninstallLibrary(const std::string& id) { impl_->call("library.uninstall","{\"library\":"+quote(id)+'}',30000); }
     void RemoteControl::libraryEdit(const std::string& id,const PerformanceInfo& info) {
         impl_->call("library.edit","{\"id\":"+quote(id)+",\"name\":"+quote(info.name)+",\"description\":"+quote(info.description)+",\"tags\":"+quoted(info.tags)+",\"color\":"+quote(info.color)+'}',30000);

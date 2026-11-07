@@ -1084,7 +1084,7 @@ use.
 Libraries come as [archives](library-archive.md): a library, an exported Performance or Sound,
 or a plugin package (`kind` `plugin`: plugin builds and no items).
 
-- `library.contents` takes `{file}` and returns `{id,name,kind,items,code,signer}`, each item's `kind`,
+- `library.contents` takes `{file}` (an archive, or an unpacked package folder) and returns `{id,name,kind,items,code,signer}`, each item's `kind`,
   `id` and `name`. `code` is each plugin build it would add to the store (not one already
   there), and `signer` the whole archive's, each `{kind,name,version,platform,status,key,keyName}`
   ([RFC 0006](rfcs/0006-packages-and-portability.md#signatures)): `kind` `plugin` (`app` once
@@ -1122,7 +1122,8 @@ or a plugin package (`kind` `plugin`: plugin builds and no items).
 - `trust.list` (`{}`) returns `{keys}`: the trust store ([RFC 0006](rfcs/0006-packages-and-portability.md#signatures)),
   `trust.json` in the data folder, each `{id,key,name,scope,revoked}`: the key's ID (the first
   16 hex digits of the SHA-256 of its 32 bytes, its fingerprint), its Ed25519 public key in hex,
-  its name, what it is trusted for (any of `plugins`, `apps` and `content`) and whether it is
+  its name, what it is trusted for (any of `plugins`, `apps`, `content` and `repositories`, a
+  package repository's root key) and whether it is
   revoked. `trust.set` takes `{key,name,scope}` and optional `revoked`, adding the key or
   replacing its entry; `trust.remove` takes `{id}`. Both return `{"accepted":true}`.
 - `keys.list` (`{}`) returns `{keys}`, the signing keys in the data folder's `Keys/`, each
@@ -1130,6 +1131,33 @@ or a plugin package (`kind` `plugin`: plugin builds and no items).
   `{name}` (letters, digits, `.`, `-` and `_`, at most 64, not starting with `.`) and
   returns the new key's `{name,id,key}`; its private key is written to `Keys/<name>.key`,
   readable only by the user. A name already used is refused.
+- `packages.list` takes `{source}` and `packages.install` takes `{source,id}` and optional
+  `version` and `acceptUnsignedCode`; each returns `{job}` at once and goes on in the engine,
+  off its control thread ([RFC 0031](rfcs/0031-package-repository-and-distribution.md)).
+  `source` is a folder holding a package repository: `repository.json`, `repository.sig`,
+  `index/` and the package files under `blobs/<first two hex digits>/<sha256>`, as the
+  [index builder](../tools/package-repository/template/README.md) and a static host lay them
+  out. Its root key must be in the trust store for `repositories`; the root key's signature
+  over the index key, the index key's over the root, the index's and the package file's
+  SHA-256 and size, and every signature in the archive are checked, and a root with a lower
+  `serial` than one this device has seen (kept in `repositories.json` in the data folder) is
+  refused. An install takes `version`, or the newest `stable` version that is not yanked and
+  that this device can install; one needing a newer Oscairn than this one (`requires.oscairn`)
+  or bringing plugin code with no build for this device is refused. The archive must be the
+  release the index names (its manifest's SHA-256) and signed by its publisher's key. It
+  installs as `library.install` installs a locked library (a plugin package's builds into
+  the store), with only this device's plugin builds, under the same rules for code. One job
+  runs at a time; another is refused with reason `busy`.
+- `packages.job` takes `{job}` and returns `{job,state,error,repository,name,rootKey,serial,
+  packages,package,version,installed}`. `state` is `running`, `done` or `failed`, `error`
+  saying why. `rootKey` is the repository's root key once read, so a refusal for an untrusted
+  one can offer to trust it. A listing's `packages` are each `{id,name,summary,license,
+  publisher,publisherKey,tags,versions}`, each version `{version,channel,yanked,incompatible,
+  size,installed}`: `incompatible` says why this device cannot install it (empty when it can),
+  and `size` and `installed` are this platform's download and installed bytes. An install's
+  `package` and `version` say what it chose and `installed` is what `library.install`
+  returns. An install unpacks off the control thread; asking about it once it has unpacked
+  moves it into place.
 - `library.uninstall` takes `{library}`; `library.delete` takes `{id}`, any item's.
 - `library.query` items carry `library`: the installed library holding them, locked, or empty
   for the user's own. Saving over a locked item, a Performance by `library.save` or a part's

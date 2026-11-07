@@ -9,6 +9,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <memory>
+#include <fstream>
 #include <set>
 #include <stdexcept>
 #include <sys/stat.h>
@@ -204,49 +205,89 @@ namespace oscairn
         if(extract) fs::create_directories(into);
         try
         {
+            // Its entries: a zip's, read in place, or an unpacked folder's (RFC 0031), whose hidden
+            // files, which desktops add, are skipped. Each is checked before any is written.
+            struct Entry { std::string name; uint64_t size; bool directory, link; mz_uint index; };
+            std::vector<Entry> entries;
             Zip z(true);
-            if(!mz_zip_reader_init_file(&z.zip, archive.string().c_str(), 0)) bad("it is not a zip archive");
-            const auto count = mz_zip_reader_get_num_files(&z.zip);
-            if(count > maxEntries) bad("it holds too many files");
-            std::set<std::string> names;
-            uint64_t total = 0, nameBytes = 0;
-            std::string manifest, archiveSignature;
-            for(mz_uint i = 0; i < count; ++i)
+            const bool folder = fs::is_directory(archive);
+            if(folder)
             {
-                mz_zip_archive_file_stat st;
-                if(!mz_zip_reader_file_stat(&z.zip, i, &st)) bad("an entry cannot be read");
-                std::string name = st.m_filename;
-                const bool directory = mz_zip_reader_is_file_a_directory(&z.zip, i);
-                if(directory && !name.empty() && name.back() == '/') name.pop_back();
+                for(auto it = fs::recursive_directory_iterator(archive); it != fs::recursive_directory_iterator(); ++it)
+                {
+                    const auto relative = fs::relative(it->path(), archive);
+                    if(hidden(relative)) { it.disable_recursion_pending(); continue; }
+                    const bool link = it->is_symlink(), directory = !link && it->is_directory();
+                    entries.push_back({relative.generic_string(), directory || link ? 0 : it->file_size(), directory, link, 0});
+                    if(entries.size() > maxEntries) bad("it holds too many files");
+                }
+            }
+            else
+            {
+                if(!mz_zip_reader_init_file(&z.zip, archive.string().c_str(), 0)) bad("it is not a zip archive");
+                const auto count = mz_zip_reader_get_num_files(&z.zip);
+                if(count > maxEntries) bad("it holds too many files");
+                for(mz_uint i = 0; i < count; ++i)
+                {
+                    mz_zip_archive_file_stat st;
+                    if(!mz_zip_reader_file_stat(&z.zip, i, &st)) bad("an entry cannot be read");
+                    std::string name = st.m_filename;
+                    const bool directory = mz_zip_reader_is_file_a_directory(&z.zip, i);
+                    if(directory && !name.empty() && name.back() == '/') name.pop_back();
+                    entries.push_back({name, st.m_uncomp_size, directory, ((st.m_external_attr >> 16) & S_IFMT) == S_IFLNK, i});
+                }
+            }
+            // A small entry, whole: from the zip, or the folder's file read and checked for its size.
+            auto small = [&](const Entry& e) {
+                std::string bytes(size_t(e.size), '\0');
+                if(folder)
+                {
+                    std::ifstream in(archive / e.name, std::ios::binary);
+                    if(!in.read(bytes.data(), std::streamsize(bytes.size())) || in.peek() != EOF) bad("cannot read " + e.name);
+                }
+                else if(!mz_zip_reader_extract_to_mem(&z.zip, e.index, bytes.data(), bytes.size(), 0)) bad("cannot read " + e.name);
+                return bytes;
+            };
+            std::set<std::string> names;
+            uint64_t total = 0, nameBytes = 0, largest = 0;
+            std::string manifest, archiveSignature;
+            for(const auto& e : entries)
+            {
+                const auto& name = e.name;
                 if(!safe(name)) bad("an entry with an unsafe name: " + name);
                 const auto top = name.substr(0, name.find('/'));
                 if(name != "library.json" && name != "library.sig" && !tops.count(top)) bad("an entry outside its folders: " + name);
-                if(((st.m_external_attr >> 16) & S_IFMT) == S_IFLNK) bad("a link: " + name);
+                if(e.link) bad("a link: " + name);
                 if((nameBytes += name.size()) > maxNameBytes) bad("its names are too long");
                 if(!names.insert(name).second) bad("an entry twice: " + name);
-                if(directory) { if(extract) fs::create_directories(into / name); continue; }
-                if(st.m_uncomp_size > maxEntry || (total += st.m_uncomp_size) > maxTotal) bad("it is too large");
+                if(e.directory) continue;
+                if(e.size > maxEntry || (total += e.size) > maxTotal) bad("it is too large");
+                largest = std::max(largest, e.size);
                 if(name == "library.json")
                 {
-                    if(st.m_uncomp_size > maxManifestBytes) bad("the manifest is too large");
-                    manifest.resize(size_t(st.m_uncomp_size));
-                    if(!mz_zip_reader_extract_to_mem(&z.zip, i, manifest.data(), manifest.size(), 0)) bad("the manifest cannot be read");
-                    continue;
+                    if(e.size > maxManifestBytes) bad("the manifest is too large");
+                    manifest = small(e);
                 }
                 if(name == "library.sig")
                 {
-                    if(st.m_uncomp_size > 4096) bad("the archive's signature is too large");
-                    archiveSignature.resize(size_t(st.m_uncomp_size));
-                    if(!mz_zip_reader_extract_to_mem(&z.zip, i, archiveSignature.data(), archiveSignature.size(), 0)) bad("the archive's signature cannot be read");
-                    continue;
+                    if(e.size > 4096) bad("the archive's signature is too large");
+                    archiveSignature = small(e);
                 }
-                if(!extract) continue;
-                const auto out = into / name;
-                fs::create_directories(out.parent_path());
-                if(!mz_zip_reader_extract_to_file(&z.zip, i, out.string().c_str(), 0)) bad("cannot extract " + name);
-                if(fs::file_size(out) != st.m_uncomp_size) bad("an entry is not the size it says: " + name);
             }
             if(manifest.empty()) bad("it has no library.json");
+            // Room for what it holds and one entry more (RFC 0031), before anything is written.
+            if(extract && fs::space(into).available < total + largest) bad("there is not room for it on this device: it needs " + std::to_string((total + largest) >> 20) + " MiB");
+            if(extract)
+                for(const auto& e : entries)
+                {
+                    const auto out = into / e.name;
+                    if(e.directory) { fs::create_directories(out); continue; }
+                    if(e.name == "library.json" || e.name == "library.sig") continue;
+                    fs::create_directories(out.parent_path());
+                    if(folder) fs::copy_file(archive / e.name, out);
+                    else if(!mz_zip_reader_extract_to_file(&z.zip, e.index, out.string().c_str(), 0)) bad("cannot extract " + e.name);
+                    if(fs::file_size(out) != e.size) bad("an entry is not the size it says: " + e.name);
+                }
             if(!detail::jsonPreflight(manifest, 16).empty()) bad("its manifest is not valid JSON");
             const std::unique_ptr<json_value_s, decltype(&std::free)> doc{json_parse(manifest.data(), manifest.size()), &std::free};
             V d = doc.get();
@@ -255,6 +296,7 @@ namespace oscairn
             if(!version || version->type != json_type_number || std::string(static_cast<const json_number_s*>(version->payload)->number, static_cast<const json_number_s*>(version->payload)->number_size) != "3")
                 bad("its version is not 3");
             Package p;
+            p.manifestSha256 = assets::sha256(manifest);
             // Signatures, each checked against what it signs; one that does not verify is refused like a wrong hash.
             auto signatures = [](V list) { try { return signing::signatures(list); } catch(const std::runtime_error& e) { bad(e.what()); } };
             if(!archiveSignature.empty())

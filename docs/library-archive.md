@@ -107,13 +107,16 @@ trusted is the installing device's [trust store](rfcs/0006-packages-and-portabil
 
 ## As a folder
 
-Planned ([RFC 0031](rfcs/0031-package-repository-and-distribution.md#installing-in-little-space)),
-not built. A package can also be an unpacked folder: the same tree as inside the zip, with
-`library.json` and every file it lists by hash. It is a second form of this format, read by the
-same rules, except that hidden files a desktop adds are skipped. Each file is hashed as it is
-copied in. Archives on a USB drive or a share are to be read in place and installed entry by
-entry, so an install needs room for the installed files plus one entry, not for the archive and
-its contents at once.
+A package can also be an unpacked folder
+([RFC 0031](rfcs/0031-package-repository-and-distribution.md#installing-in-little-space)): the
+same tree as inside the zip, with `library.json` and every file it lists by hash. It is a second
+form of this format, read by the same rules, except that hidden files a desktop adds are
+skipped. Each file is copied into the install's folder in the data folder and hashed there, so
+a drive that changes underneath is caught. An archive on a USB drive or a share is read in place,
+never copied first. Before anything is written, the install checks that the data folder's file
+system has room for every entry and the largest once more; what it unpacked is then moved into
+place by renames, so an install needs room for the installed files plus one entry, not twice
+that. A pulled drive or a bad hash leaves nothing behind.
 
 ## Installing one
 

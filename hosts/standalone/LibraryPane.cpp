@@ -3,6 +3,7 @@
 #include "PerformanceColors.h"
 #include "Settings.h"
 #include "oscairn/package.h"
+#include "oscairn/repository.h"
 
 namespace oscairn::standalone
 {
@@ -198,6 +199,63 @@ namespace oscairn::standalone
     {
         std::vector<uint32_t> out; for(int i = 0; i < boxes.size(); ++i) if(boxes[i]->getToggleState()) out.push_back(ids[size_t(i)]);
         return out;
+    }
+
+    RepositoryChoices::RepositoryChoices(const Control::PackageJob& listing)
+    {
+        heading_ = text(listing.name) + " (" + text(listing.repository) + ")";
+        for(const auto& p : listing.packages)
+        {
+            // The newest stable version it can install, as the engine picks; else why the newest cannot.
+            const Control::RepositoryVersion* pick = nullptr;
+            const Control::RepositoryVersion* newest = nullptr;
+            for(const auto& v : p.versions)
+            {
+                if(!newest || repository::older(newest->version, v.version)) newest = &v;
+                if(v.incompatible.empty() && v.yanked.empty() && (v.channel.empty() || v.channel == "stable") && (!pick || repository::older(pick->version, v.version))) pick = &v;
+            }
+            juce::String line = text(p.name.empty() ? p.id : p.name);
+            if(pick) line << " " << text(pick->version) << ", " << juce::File::descriptionOfSizeInBytes(int64_t(pick->installed)) << ", by " << text(p.publisher) << (p.summary.empty() ? juce::String() : ": " + text(p.summary));
+            else line << ": cannot be installed here" << (newest && !newest->incompatible.empty() ? ", " + text(newest->incompatible) : juce::String());
+            auto* row = rows.add(new juce::Label({}, line));
+            row->setTooltip(line);
+            auto* go = installs.add(new juce::TextButton("Install"));
+            go->setEnabled(pick != nullptr);
+            if(!pick) row->setColour(juce::Label::textColourId, ink(Ink::Muted));
+            picks.push_back({p.id, pick ? pick->version : std::string()});
+            const auto index = picks.size() - 1;
+            go->onClick = [this, index] { if(onInstall) onInstall(picks[index].first, picks[index].second); };
+            list.addAndMakeVisible(row); list.addAndMakeVisible(go);
+        }
+        view.setViewedComponent(&list, false);
+        view.setScrollBarsShown(true, false);
+        addAndMakeVisible(view); addAndMakeVisible(close);
+        setSize(560, std::min(600, int(rows.size()) * 34 + 110));
+    }
+
+    void RepositoryChoices::resized()
+    {
+        auto area = getLocalBounds().reduced(16, 12);
+        headingArea_ = area.removeFromTop(30);
+        close.setBounds(area.removeFromBottom(30).removeFromRight(100));
+        area.removeFromBottom(8);
+        view.setBounds(area);
+        const int tall = rows.size() * 34;
+        list.setSize(area.getWidth() - (tall > area.getHeight() ? view.getScrollBarThickness() : 0), tall);
+        auto lines = list.getLocalBounds();
+        for(int i = 0; i < rows.size(); ++i)
+        {
+            auto line = lines.removeFromTop(34).reduced(0, 2);
+            installs[i]->setBounds(line.removeFromRight(90));
+            rows[i]->setBounds(line);
+        }
+    }
+
+    void RepositoryChoices::paint(juce::Graphics& g)
+    {
+        g.fillAll(ink(Ink::Background));
+        g.setColour(ink(Ink::Text));
+        drawInked(g, heading_, headingArea_, juce::Font(juce::FontOptions(textSize(TextRole::Body, std::max(1, desktopMode(*this))), juce::Font::bold)));
     }
 
     juce::String describeSigner(const Control::Signer& s)
@@ -818,6 +876,7 @@ namespace oscairn::standalone
     {
         juce::PopupMenu menu;
         menu.addItem(1, "Install from a file...");
+        menu.addItem(999, "Install from a repository folder...");
         // Tags hidden from the tag list, to show again.
         juce::PopupMenu hidden;
         const auto hiddenTags = result_.hiddenTags;
@@ -862,6 +921,7 @@ namespace oscairn::standalone
         menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&libraries_), [safe = juce::Component::SafePointer<LibraryPane>(this), installed, hiddenTags, plugins](int chosen) {
             if(!safe || chosen <= 0) return;
             if(chosen == 1) { safe->install(); return; }
+            if(chosen == 999) { safe->installFromRepository(); return; }
             if(chosen >= 100000)
             {
                 const auto& plugin = plugins[size_t((chosen - 100000) / 2)];
@@ -958,6 +1018,84 @@ namespace oscairn::standalone
                 safe->tell("Installing...");
                 safe->stale_ = true; safe->awaiting_ = true;
             };
+        });
+    }
+
+    void LibraryPane::installFromRepository()
+    {
+        chooser_ = std::make_unique<juce::FileChooser>("A package repository: the folder holding repository.json", juce::File());
+        chooser_->launchAsync(juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectDirectories, [safe = juce::Component::SafePointer<LibraryPane>(this)](const juce::FileChooser& fc) {
+            if(safe && fc.getResult() != juce::File()) safe->listRepository(fc.getResult().getFullPathName().toStdString());
+        });
+    }
+
+    void LibraryPane::awaitPackageJob(uint64_t job, std::function<void(const Control::PackageJob&)> then)
+    {
+        juce::Timer::callAfterDelay(100, [safe = juce::Component::SafePointer<LibraryPane>(this), job, then = std::move(then)]() mutable {
+            if(!safe) return;
+            Control::PackageJob state;
+            if(const auto error = safe->engine_.packages([&](Control& c) { state = c.packageJob(job); }); !error.empty()) { safe->tell(text(error)); return; }
+            if(state.state == "running") { safe->awaitPackageJob(job, std::move(then)); return; }
+            then(state);
+        });
+    }
+
+    // What it offers, once its root, index key and index verify; a root key not trusted yet is
+    // offered by its fingerprint, and trusted for repositories only when the user says so.
+    void LibraryPane::listRepository(const std::string& folder)
+    {
+        uint64_t job = 0;
+        if(const auto error = engine_.packages([&](Control& c) { job = c.listRepository(folder); }); !error.empty()) { tell(text(error)); return; }
+        tell("Reading the repository...");
+        awaitPackageJob(job, [safe = juce::Component::SafePointer<LibraryPane>(this), folder](const Control::PackageJob& listing) {
+            if(!safe) return;
+            if(listing.state == "failed" && !listing.rootKey.empty() && listing.error.find("not a repository this device trusts") != std::string::npos)
+            {
+                auto options = juce::MessageBoxOptions::makeOptionsOkCancel(juce::MessageBoxIconType::QuestionIcon, "Trust this repository?",
+                    "Its root key's fingerprint is " + fingerprint(signing::keyId(listing.rootKey)) + ". Trust it only if its publisher gave you that fingerprint.", "Trust", "Cancel", safe.getComponent());
+                juce::AlertWindow::showAsync(options, [safe, folder, key = listing.rootKey](int chosen) {
+                    if(!safe || chosen != 1) return;
+                    const auto error = safe->engine_.packages([&](Control& c) { c.setTrustedKey({"", key, "Repository " + fingerprint(signing::keyId(key)).toStdString(), {"repositories"}}); });
+                    if(error.empty()) safe->listRepository(folder); else safe->tell(text(error));
+                });
+                return;
+            }
+            if(listing.state == "failed") { safe->tell(""); juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Not read", text(listing.error)); return; }
+            safe->tell(juce::String(int(listing.packages.size())) + (listing.packages.size() == 1 ? " package in " : " packages in ") + text(listing.name) + ".");
+            auto* content = new RepositoryChoices(listing);
+            juce::DialogWindow::LaunchOptions options;
+            options.dialogTitle = "Install from " + text(listing.name);
+            options.content.setOwned(content); options.componentToCentreAround = safe.getComponent(); options.useNativeTitleBar = true; options.resizable = false;
+            options.dialogBackgroundColour = ink(Ink::Background);
+            auto* dialog = options.launchAsync();
+            content->close.onClick = [dialog] { dialog->exitModalState(0); };
+            content->onInstall = [safe, dialog, folder](const std::string& id, const std::string& version) {
+                dialog->exitModalState(0);
+                if(safe) safe->installPackage(folder, id, version, false);
+            };
+        });
+    }
+
+    void LibraryPane::installPackage(const std::string& folder, const std::string& id, const std::string& version, bool acceptCode)
+    {
+        uint64_t job = 0;
+        if(const auto error = engine_.packages([&](Control& c) { job = c.installFromRepository(folder, id, version, acceptCode); }); !error.empty()) { tell(text(error)); return; }
+        tell("Installing " + text(id) + " " + text(version) + "...");
+        awaitPackageJob(job, [safe = juce::Component::SafePointer<LibraryPane>(this), folder, id, version](const Control::PackageJob& done) {
+            if(!safe) return;
+            // Code from an unknown source asks first, as installing an archive does.
+            if(done.state == "failed" && done.error.find("unknown source") != std::string::npos)
+            {
+                auto options = juce::MessageBoxOptions::makeOptionsOkCancel(juce::MessageBoxIconType::WarningIcon, "Install anyway?", text(done.error), "Install anyway", "Cancel", safe.getComponent());
+                juce::AlertWindow::showAsync(options, [safe, folder, id, version](int chosen) { if(safe && chosen == 1) safe->installPackage(folder, id, version, true); });
+                safe->tell("");
+                return;
+            }
+            if(done.state == "failed") { safe->tell(""); juce::AlertWindow::showMessageBoxAsync(juce::MessageBoxIconType::WarningIcon, "Not installed", text(done.error)); return; }
+            juce::String said = text(done.package) + " " + text(done.version) + " installed.";
+            for(const auto& n : done.installed.notes) said << " " << text(n) << ".";
+            safe->tell(said);
+            safe->stale_ = true; // its items, listed again
         });
     }
 

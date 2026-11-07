@@ -59,6 +59,27 @@ namespace oscairn::standalone
         juce::String signer_; juce::Rectangle<int> signerArea_;
         int codeLines_ = 0;
     };
+    /// What a package repository offers (RFC 0031): a row per package with the newest version this
+    /// device can install and its Install button, or, grayed, why it cannot install any. The rows
+    /// scroll; Close stays in view.
+    class RepositoryChoices : public juce::Component
+    {
+    public:
+        explicit RepositoryChoices(const Control::PackageJob& listing);
+        juce::Viewport view; // holds list
+        juce::Component list;
+        juce::OwnedArray<juce::Label> rows;
+        juce::OwnedArray<juce::TextButton> installs;           // one per row, disabled where it cannot install
+        std::vector<std::pair<std::string, std::string>> picks; // each row's package and version
+        juce::TextButton close{"Close"};
+        std::function<void(const std::string& id, const std::string& version)> onInstall;
+        void paint(juce::Graphics&) override;
+        void resized() override;
+
+    private:
+        juce::String heading_;
+        juce::Rectangle<int> headingArea_;
+    };
     /// Who signed an archive (RFC 0006), as the install dialog says it.
     juce::String describeSigner(const Control::Signer& signer);
     /// Another Performance's parts and scenes to import (RFC 0021), all ticked, under headings.
@@ -114,7 +135,13 @@ namespace oscairn::standalone
         void librariesMenu();
         void removePlugin(const Control::InstalledPlugin& plugin);
         void addPluginBuild(const Control::InstalledPlugin& plugin);
-        void itemMenu(int row);                              // everything that can be done with it
+        // A package repository in a folder (RFC 0031): what it offers, listed and installed by jobs
+        // in the engine, asked about every 100 ms until each ends.
+        void installFromRepository();
+        void listRepository(const std::string& folder);
+        void installPackage(const std::string& folder, const std::string& id, const std::string& version, bool acceptCode);
+        void awaitPackageJob(uint64_t job, std::function<void(const Control::PackageJob&)> then);
+        void itemMenu(int row);                             // everything that can be done with it
         void editItem(int row);                              // its name, description and tags, asked for
         std::string copyItem(int row);                       // into the user's own; the copy's ID, or empty
         void exportItem(int row);                            // to an archive file, chosen and asked about

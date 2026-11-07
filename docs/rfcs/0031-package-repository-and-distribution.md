@@ -27,6 +27,18 @@ Checked when built and tested; the sections below say how.
 
 - [ ] 1. The repository format; installing from a folder or USB drive, from an unpacked package
       folder, and streamed
+      (built 2026-11-06: the format as the template's index builder publishes it, whole archives
+      as blobs; installing from a repository folder, its root, index key and index verified
+      against a root key trusted for `repositories`, every blob checked by its SHA-256 and size,
+      an older root refused, builds this device cannot run and versions needing a newer system
+      not installed, only this device's builds installed; `packages.list`, `packages.install` and
+      `packages.job`, reading, checking and unpacking off the control thread; unpacked package
+      folders and archives read in place, a free-space check before writing, items and builds
+      moved into place by renames; in the desktop Library, Install from a repository folder;
+      `control-repository`, `desktop-gaps`. Not yet: releases stored in pieces (items, samples
+      and builds as separate blobs, decompressed as they stream), `oscairn repo build`, deltas
+      (step 2), a device's list of repositories and `.orepo` files, recording each installed
+      package's repository; the free-space refusal and a drive pulled midway are not tested)
 - [ ] 2. Fetching over HTTPS: refresh, incremental index updates, mirrors, resumable downloads
 - [ ] 3. Publishing: the `oscairn publish` command, checks, immutable versions and yanking
 - [ ] 4. Revocation lists and the takedown process
@@ -122,7 +134,9 @@ blobs/<ab>/<sha256>        package files: manifests, items, samples, plugin buil
 - **The root is the only file that changes.** It is small (a few kilobytes) and names the
   current index, the deltas, the revocation list and the mirrors by hash and size.
 - **Blobs are kept by the first two hex digits of their hash** (`<ab>`), so no folder or
-  GitHub release holds too many: a blob is at the root's blob base, then `<ab>/<sha256>`.
+  GitHub release holds too many: a blob is at the root's blob base, then `<ab>/<sha256>`. In a
+  folder or on a USB drive it is at `blobs/<ab>/<sha256>` beside the root, whatever the blob
+  base says.
 - **Compressed with deflate (gzip),** which the vendored miniz already reads. No new library.
 
 ### Package files

@@ -31,6 +31,7 @@ namespace oscairn
         std::vector<Plugin> plugins;
         std::map<std::string, std::string> files; // each file's SHA-256 by its path; filled by writePackage
         signing::Signature signature;              // library.sig, the whole archive's over the manifest; an empty key for none
+        std::string manifestSha256;                // the manifest's, as read: a package's identity (RFC 0006)
     };
 
     // The largest manifest read, in an archive or an installed library. A library of thousands of
@@ -66,6 +67,9 @@ namespace oscairn
     void signPackage(const std::filesystem::path& archive, const signing::Key& key);
 
     // Extracts an archive into `into`, a folder that must not exist yet, and returns its manifest.
+    // The archive is a zip, read in place, or an unpacked package folder (the same tree; hidden
+    // files in it are skipped), read by the same rules. Nothing is written unless `into`'s file
+    // system has room for every entry and the largest once more.
     // Untrusted input: refuses entries outside library.json, Performances/, Sounds/, Assets/ and
     // Plugins/, paths that climb out or are absolute, links, duplicates, more than 1,048,576 entries
     // or 64 MiB of names, more than 8 GiB in all, an entry over 2 GiB or a manifest over maxManifestBytes (as declared; each file extracted must be the

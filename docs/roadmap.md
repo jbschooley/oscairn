@@ -615,6 +615,8 @@ Each starts as an RFC:
   immutable versions and yanking; Get more in the Library and a Store app filtered by the
   device's profile; updates that never move a Performance's lock on their own; revocation and
   takedown; fetching for an offline instrument from a desktop, USB or a paired computer
+  (built: installing from a repository folder or USB drive, every signature and hash checked,
+  from the API and the desktop Library; unpacked package folders)
 - [ ] **Keeping plugins loaded:** a memory budget, unloading the least recently used, setlist
   preparation options and a setlist check; CPU, memory and storage meters. Loaded items beyond
   the open Performance are opportunistic memory ([RFC 0025](rfcs/0025-resource-budgets.md#the-order-of-eviction)).

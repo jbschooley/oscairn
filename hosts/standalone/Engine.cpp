@@ -552,6 +552,12 @@ namespace oscairn::standalone
         try{return control_->launchApp(app,dropNext);}catch(const std::exception& e){std::fprintf(stderr,"oscairn: launch: %s\n",e.what());return {true, false, {}};}
     }
     void Engine::appClosed(const std::string& app){command([this,app]{control_->appClosed(app);});}
+    std::string Engine::packages(const std::function<void(Control&)>& call)
+    {
+        if(!connected()) return "The engine is not running.";
+        if(!controlReady()) return "The engine is busy; try again in a moment.";
+        try{call(*control_);return {};}catch(const std::exception& e){return e.what();}
+    }
     std::string Engine::removePlugin(const Control::InstalledPlugin& plugin)
     {
         if(!connected()) return "The engine is not running.";

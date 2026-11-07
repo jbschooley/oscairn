@@ -73,6 +73,9 @@ namespace oscairn
         std::vector<InstalledPlugin> installedPlugins() override;
         void removePlugin(const std::string& format, const std::string& id, const std::string& version, const std::string& platform = {}) override;
         void addPluginBuild(const std::string& format, const std::string& id, const std::string& version, const std::string& platform, const std::string& path) override;
+        uint64_t listRepository(const std::string& source) override;
+        uint64_t installFromRepository(const std::string& source, const std::string& id, const std::string& version = {}, bool acceptUnsignedCode = false) override;
+        PackageJob packageJob(uint64_t id) override;
         std::vector<TrustedKey> trustedKeys() override;
         void setTrustedKey(const TrustedKey& key) override;
         void removeTrustedKey(const std::string& id) override;
@@ -644,6 +647,10 @@ namespace oscairn
         std::vector<std::string> exportArchive(const std::string& file, const std::string& kind, const std::function<std::vector<PartSource>(const std::filesystem::path&, Package&)>& write, bool editedSounds, const ExportSigning& sign);
         static signing::Key signingKey(const std::string& name); // Keys/<name>.key in the data folder
         static Signer judge(const std::string& kind, const std::vector<signing::Signature>& signatures); // against the trust store
+        Installed installUnpacked(const Package& package, const std::filesystem::path& into, bool asLibrary, const std::vector<std::string>& items, bool acceptUnsignedCode, bool thisPlatformOnly);
+        struct PackageWork;                        // the package job off the control thread (packages.cpp)
+        std::shared_ptr<PackageWork> packageWork_; // joins its thread when it goes
+        uint64_t packageJobs_ = 0;
         uint64_t revision_ = 0, sequence_ = 0;
         using Address = std::pair<NodeId,uint32_t>;
         struct Command { ChangeKind kind; double value; };

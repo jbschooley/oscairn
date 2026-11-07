@@ -507,7 +507,7 @@ namespace oscairn
             if( method == "session.hello" )
             {
                 fields(p, {});
-                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.prepare","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.edit","library.copy","library.export","audition.start","audition.stop","audition.get","record.start","record.stop","record.get","record.takes","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","window.info","window.show","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","sounds.presets","assets.register","assets.import","assets.libraries","session.status","engine.attach","engine.release","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","instruments.share","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","master.set","graph.role","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","notes.panic","midi.ignore","controllers.set","controllers.view","controllers.get","pads.get","pads.set","pads.play","pads.pressure","assignments.get","assignments.set","parts.midiOut","trust.list","trust.set","trust.remove","keys.list","keys.make","record.retro","record.delete","record.rename","record.play","harmony.get","harmony.set"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
+                return R"({"protocolVersion":1,"server":"oscairn","capabilities":["performance.save","performance.load","performance.prepare","performance.export","budget.set","budget.estimate","performance.info","performance.setInfo","library.query","library.favorite","library.tag","library.edit","library.copy","library.export","audition.start","audition.stop","audition.get","record.start","record.stop","record.get","record.takes","library.rescan","library.contents","library.install","library.libraries","library.uninstall","library.delete","library.save","library.load","parts.saveSound","parts.loadSound","parts.fromSound","performance.contents","performance.import","state.info","state.save","window.info","window.show","presets.list","properties.list","properties.get","properties.set","properties.request","sounds.get","sounds.prepare","sounds.select","sounds.discard","sounds.presets","assets.register","assets.import","assets.libraries","session.status","engine.attach","engine.release","params.list","params.get","params.set","params.text","params.gesture","graph.audio-routing","graph.get","graph.add","effects.create","effects.resources","instruments.share","graph.remove","graph.replace","graph.connect","graph.disconnect","graph.map","graph.unmap","graph.commit","parts.add","parts.remove","parts.insert","parts.removeNode","parts.move","parts.addSplit","parts.removeSplit","parts.addLane","parts.removeLane","parts.lane","parts.input","parts.output","parts.send","parts.level","parts.name","parts.solo","parts.pan","master.set","graph.role","parts.meters","wires.meters","edit.undo","edit.redo","edit.history","wires.connect","wires.disconnect","wires.enable","graph.enable","wires.mix","wires.zones","scenes.add","scenes.store","scenes.select","scenes.remove","scenes.name","scenes.scope","scenes.transition","scenes.untouched","controls.add","controls.remove","controls.name","controls.targets","controls.set","subscribe","unsubscribe","transport.get","transport.set","notes.send","notes.panic","midi.ignore","controllers.set","controllers.view","controllers.get","pads.get","pads.set","pads.play","pads.pressure","assignments.get","assignments.set","parts.midiOut","trust.list","trust.set","trust.remove","packages.list","packages.install","packages.job","keys.list","keys.make","record.retro","record.delete","record.rename","record.play","harmony.get","harmony.set"],"limits":{"messageBytes":65536,"depth":32,"batch":64,"parameterChanges":128}})";
             }
             if( method == "engine.attach" || method == "engine.release" )
             {
@@ -790,12 +790,46 @@ namespace oscairn
                 if(set)fields(p,{"key","name","scope","revoked"});else fields(p,{"id"});
                 Control::TrustedKey k;
                 if(set){k.key=std::string(string(member(p,"key")));k.name=std::string(string(member(p,"name")));
-                    for(auto s:array(member(p,"scope"),3,0))k.scope.push_back(std::string(string(s)));
+                    for(auto s:array(member(p,"scope"),4,0))k.scope.push_back(std::string(string(s)));
                     k.revoked=member(p,"revoked") && boolean(member(p,"revoked"));}
                 try{if(set)c.setTrustedKey(k);else c.removeTrustedKey(std::string(string(member(p,"id"))));}
                 catch(const std::invalid_argument& e){throw Failure{-32602,e.what()};}
                 catch(const std::exception& e){throw Failure{-32005,e.what()};}
                 return R"({"accepted":true})";
+            }
+            // Package repositories (RFC 0031): jobs off the control thread, asked about by number.
+            if(method=="packages.list" || method=="packages.install") {
+                const bool install=method=="packages.install";
+                if(install)fields(p,{"source","id","version","acceptUnsignedCode"});else fields(p,{"source"});
+                const auto source=std::string(string(member(p,"source")));
+                try{
+                    const auto job=install?c.installFromRepository(source,std::string(string(member(p,"id"))),member(p,"version")?std::string(string(member(p,"version"))):std::string(),
+                                                                   member(p,"acceptUnsignedCode") && boolean(member(p,"acceptUnsignedCode")))
+                                          :c.listRepository(source);
+                    return "{\"job\":"+std::to_string(job)+'}';
+                }catch(const std::invalid_argument& e){throw Failure{-32602,e.what()};}
+                catch(const std::logic_error& e){throw Failure{-32007,e.what(),R"({"reason":"busy"})"};}
+                catch(const std::exception& e){throw Failure{-32005,e.what()};}
+            }
+            if(method=="packages.job") {
+                fields(p,{"job"});
+                Control::PackageJob j;
+                try{j=c.packageJob(integer(member(p,"job")));}catch(const std::invalid_argument& e){throw Failure{-32602,e.what()};}
+                std::vector<std::string> packages,notes,code;
+                for(const auto& x:j.packages){
+                    std::vector<std::string> versions,tags;
+                    for(const auto& t:x.tags)tags.push_back(quote(t));
+                    for(const auto& v:x.versions)versions.push_back("{\"version\":"+quote(v.version)+",\"channel\":"+quote(v.channel)+",\"yanked\":"+quote(v.yanked)+",\"incompatible\":"+quote(v.incompatible)+
+                                                                    ",\"size\":"+std::to_string(v.size)+",\"installed\":"+std::to_string(v.installed)+'}');
+                    packages.push_back("{\"id\":"+quote(x.id)+",\"name\":"+quote(x.name)+",\"summary\":"+quote(x.summary)+",\"license\":"+quote(x.license)+",\"publisher\":"+quote(x.publisher)+
+                                       ",\"publisherKey\":"+quote(x.publisherKey)+",\"tags\":"+join(tags)+",\"versions\":"+join(versions)+'}');
+                }
+                for(const auto& n:j.installed.notes)notes.push_back(quote(n));
+                for(const auto& s:j.installed.code)code.push_back("{\"kind\":"+quote(s.kind)+",\"name\":"+quote(s.name)+",\"version\":"+quote(s.version)+",\"platform\":"+quote(s.platform)+
+                                                                  ",\"status\":"+quote(s.status)+",\"key\":"+quote(s.key)+",\"keyName\":"+quote(s.keyName)+'}');
+                return "{\"job\":"+std::to_string(j.id)+",\"state\":"+quote(j.state)+",\"error\":"+quote(j.error)+",\"repository\":"+quote(j.repository)+",\"name\":"+quote(j.name)+
+                       ",\"rootKey\":"+quote(j.rootKey)+",\"serial\":"+std::to_string(j.serial)+",\"packages\":"+join(packages)+",\"package\":"+quote(j.package)+",\"version\":"+quote(j.version)+
+                       ",\"installed\":{\"added\":"+std::to_string(j.installed.added)+",\"skipped\":"+std::to_string(j.installed.skipped)+",\"notes\":"+join(notes)+",\"code\":"+join(code)+"}}";
             }
             // Signing keys: names, IDs and public keys, never the private key.
             if(method=="keys.list" || method=="keys.make") {

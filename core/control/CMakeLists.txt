@@ -1,7 +1,8 @@
-add_library(oscairn_control STATIC src/session.cpp src/performance.cpp src/parts.cpp src/pads.cpp src/physical_controls.cpp src/controller_mapping.cpp src/controller_input.cpp src/control_surface.cpp src/undo.cpp src/library.cpp src/package.cpp src/budget.cpp src/audition.cpp src/signing.cpp src/trust.cpp third_party/miniz/miniz.c third_party/monocypher/monocypher.c third_party/monocypher/monocypher-ed25519.c)
+add_library(oscairn_control STATIC src/session.cpp src/performance.cpp src/parts.cpp src/pads.cpp src/physical_controls.cpp src/controller_mapping.cpp src/controller_input.cpp src/control_surface.cpp src/undo.cpp src/library.cpp src/package.cpp src/repository.cpp src/packages.cpp src/budget.cpp src/audition.cpp src/signing.cpp src/trust.cpp third_party/miniz/miniz.c third_party/monocypher/monocypher.c third_party/monocypher/monocypher-ed25519.c)
 set_source_files_properties(third_party/miniz/miniz.c third_party/monocypher/monocypher.c third_party/monocypher/monocypher-ed25519.c PROPERTIES COMPILE_OPTIONS "-w") # vendored, unmodified
 target_include_directories(oscairn_control SYSTEM PRIVATE third_party)
 target_include_directories(oscairn_control PUBLIC include)
+target_compile_definitions(oscairn_control PRIVATE OSCAIRN_VERSION="${PROJECT_VERSION}") # what a package's requires.oscairn is checked against (RFC 0031)
 target_link_libraries(oscairn_control PUBLIC oscairn_engine)
 target_compile_options(oscairn_control PRIVATE -Wall -Wextra)
 
@@ -111,6 +112,10 @@ if(Python3_Interpreter_FOUND)
     # The package repository template's index builder (RFC 0031), signed with oscairn-sign.
     add_test(NAME package-repository-index COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/package-repository/test_build_index.py" $<TARGET_FILE:oscairn-sign>)
     set_tests_properties(package-repository-index PROPERTIES TIMEOUT 120)
+    # Installing from a repository that index builder made (RFC 0031 step 1), through RPC.
+    add_test(NAME control-repository COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/repository.py" $<TARGET_FILE:oscairn-json-rpc-test> $<TARGET_FILE:oscairn_basic_synth>
+        $<TARGET_FILE:oscairn-sign> $<TARGET_FILE:kick-clap-fixture-normal> "${PROJECT_SOURCE_DIR}/tools/package-repository/template/scripts/build-index.py")
+    set_tests_properties(control-repository PROPERTIES TIMEOUT 120)
 endif()
 # Opt-in, for third-party plugins (not a test here): a plugin through the library, an archive and the store.
 add_executable(oscairn-plugin-check tests/plugin_check.cpp)

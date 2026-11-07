@@ -191,16 +191,22 @@ std::string storedName(const std::string& format,const std::string& id,const std
     const auto p=storedIdentity(storeFolder(format,id,version));
     return p.id==id && !p.name.empty()?p.name:id;
 }
+// A file or folder moved by a rename where it can be, else copied: an install's unpacked folder is
+// in the data folder, so its items and builds normally move without a second copy.
+void moveInto(const fs::path& from,const fs::path& to){
+    std::error_code e;fs::rename(from,to,e);
+    if(e)fs::copy(from,to,fs::copy_options::recursive);
+}
 // Puts one platform's build into the store, whole or not at all, replacing that platform's, with
-// its publishers' signatures beside it as <bundle>.sig (RFC 0006).
-void storeBuild(const std::string& format,const std::string& id,const std::string& version,const std::string& name,const std::string& forPlatform,const fs::path& build,const std::vector<signing::Signature>& signatures={}){
+// its publishers' signatures beside it as <bundle>.sig (RFC 0006); moved when `move`, else copied.
+void storeBuild(const std::string& format,const std::string& id,const std::string& version,const std::string& name,const std::string& forPlatform,const fs::path& build,const std::vector<signing::Signature>& signatures={},bool move=false){
     const auto folder=storeFolder(format,id,version);
     fs::create_directories(folder);
     const auto identity="{\"format\":"+quote(format)+",\"id\":"+quote(id)+",\"version\":"+quote(version)+",\"name\":"+quote(name)+"}\n";
     state_files::write(folder/"plugin.json",identity.data(),identity.size());
     const auto partial=folder/("."+forPlatform+".partial");
     std::error_code e;fs::remove_all(partial,e);fs::create_directories(partial);
-    fs::copy(build,partial/build.filename(),fs::copy_options::recursive);
+    if(move)moveInto(build,partial/build.filename());else fs::copy(build,partial/build.filename(),fs::copy_options::recursive);
     if(!signatures.empty())signing::writeSignatures(partial/(build.filename().string()+".sig"),signatures);
     fs::remove_all(folder/forPlatform,e);fs::rename(partial,folder/forPlatform);
 }
@@ -1886,9 +1892,15 @@ Control::Archive Session::archiveContents(const std::string& file) {
 }
 
 Control::Installed Session::installArchive(const std::string& file,bool asLibrary,const std::vector<std::string>& chosen,bool acceptUnsignedCode) {
-    auto& l=library();
     const auto into=unpackFolder();
     const auto p=readPackage(file,into);
+    return installUnpacked(p,into,asLibrary,chosen,acceptUnsignedCode,false);
+}
+
+// What readPackage unpacked into `into`, moved into place by renames in the data folder (RFC
+// 0031: an install needs room for what it installs, not twice that); `into` goes either way.
+Control::Installed Session::installUnpacked(const Package& p,const fs::path& into,bool asLibrary,const std::vector<std::string>& chosen,bool acceptUnsignedCode,bool thisPlatformOnly) {
+    auto& l=library();
     Installed out;
     std::vector<fs::path> created; // item folders this call copies, undone if it fails
     bool freshRoot=false;
@@ -1921,7 +1933,7 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
             if(!used.count({plugin.format,plugin.id,plugin.version}))continue;
             const auto there=storedBuilds(plugin.format,plugin.id,plugin.version);
             for(const auto& build:plugin.builds){
-                if(there.count(build.platform))continue;
+                if(there.count(build.platform) || (thisPlatformOnly && build.platform!=platform()))continue;
                 auto s=judge("plugin",build.signatures);s.name=plugin.name;s.version=plugin.version;s.platform=build.platform;
                 const auto what=plugin.name+" "+plugin.version+" ("+build.platform+")";
                 if(s.status=="revoked"){revoked.insert(build.path);out.notes.push_back(what+" is signed by a revoked key ("+s.key+"); it was not installed");}
@@ -1946,11 +1958,12 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
                 out.notes.push_back(plugin.name+" "+plugin.version+" has no build for this device in the archive");
             const auto there=storedBuilds(plugin.format,plugin.id,plugin.version);
             for(const auto& build:plugin.builds){
+                if(thisPlatformOnly && build.platform!=platform())continue; // a repository install takes what this device runs (RFC 0031)
                 if(const auto at=there.find(build.platform);at!=there.end()){
                     if(bundleDigest(at->second)!=build.sha256)out.notes.push_back("a different "+build.platform+" build of "+plugin.name+" "+plugin.version+" is already installed; it was kept");
                     continue;
                 }
-                if(!revoked.count(build.path))storeBuild(plugin.format,plugin.id,plugin.version,plugin.name,build.platform,into/build.path,build.signatures);
+                if(!revoked.count(build.path))storeBuild(plugin.format,plugin.id,plugin.version,plugin.name,build.platform,into/build.path,build.signatures,true);
             }
         }
         if(asLibrary){
@@ -1961,8 +1974,8 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
             for(const auto& i:items){
                 const auto to=root/i.path;
                 if(fs::exists(fs::symlink_status(to))){++out.skipped;continue;} // a link there too: never followed or removed
-                // Recorded before the copy, so one that fails partway comes back out.
-                fs::create_directories(to.parent_path());created.push_back(to);fs::copy(into/i.path,to,fs::copy_options::recursive);++out.added;
+                // Recorded before the move, so one that fails partway comes back out.
+                fs::create_directories(to.parent_path());created.push_back(to);moveInto(into/i.path,to);++out.added;
             }
             // Listed only once its items are all there.
             writeAtomically(root/"library.json",manifestJson(p));
@@ -1975,7 +1988,7 @@ Control::Installed Session::installArchive(const std::string& file,bool asLibrar
                 const auto copy=std::find_if(l.items().begin(),l.items().end(),[&](const LibraryItem& x){return x.library.empty() && x.origin.library==p.id && x.origin.item==i.id;});
                 if(copy!=l.items().end() && copy->hash==copy->origin.hash){ids[i.id]=copy->id;++out.skipped;continue;} // still as imported
                 const auto to=l.newFolder(i.name,i.kind);
-                fs::create_directories(to.parent_path());created.push_back(to);fs::copy(into/i.path,to,fs::copy_options::recursive);
+                fs::create_directories(to.parent_path());created.push_back(to);moveInto(into/i.path,to);
                 const auto doc=to/(i.kind=="sound"?"sound.json":"performance.json");
                 if(i.kind=="performance"){
                     // Parts point at the Sounds' copies. The span comes from the needle itself: an

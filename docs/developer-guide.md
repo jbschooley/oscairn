@@ -276,7 +276,10 @@ plugin build and the archive as above, then follow the submission steps in the r
 README; its template is kept here, in
 [tools/package-repository/template](../tools/package-repository/template/README.md). Its CI
 checks archives with `oscairn-sign verify`; `oscairn-sign file` and `verify-file` sign and check
-the repository's root and index key.
+the repository's root and index key. A device installs from the built repository as a folder
+(`packages.list`, `packages.install`; [protocol](control-protocol.md)) once its root key is
+trusted for `repositories`: copy each blob from the builder's cache to `blobs/<ab>/<sha256>`
+beside `repository.json`.
 
 ### Planned
 

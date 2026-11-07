@@ -188,6 +188,9 @@ namespace oscairn::standalone
         Control::Launch launchApp(const Control::AppMemory& app, bool dropNext = false);
         void appClosed(const std::string& app);
         std::string removePlugin(const Control::InstalledPlugin& plugin);
+        // Package repositories (RFC 0031) and the trust store: a short call (starting or asking
+        // about a package job, trusting a key), the error, or empty. The job's work runs in the engine.
+        std::string packages(const std::function<void(Control&)>& call);
         std::string pluginId(const std::string& node) const;
         void replacePlugin(const std::string& node,const std::string& path,const std::string& id,const std::string& preset={});
         // Recording (RFC 0020): the takes, this run's and those found in recordings/, read at most

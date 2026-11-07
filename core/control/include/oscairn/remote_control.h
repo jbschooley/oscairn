@@ -74,6 +74,9 @@ namespace oscairn
         std::vector<TrustedKey> trustedKeys() override;
         void setTrustedKey(const TrustedKey& key) override;
         void removeTrustedKey(const std::string& id) override;
+        uint64_t listRepository(const std::string& source) override;
+        uint64_t installFromRepository(const std::string& source, const std::string& id, const std::string& version = {}, bool acceptUnsignedCode = false) override;
+        PackageJob packageJob(uint64_t id) override;
         void libraryEdit(const std::string& id, const PerformanceInfo& info) override;
         void auditionStart(const std::string& id, uint32_t part = 0) override;
         void auditionStop(bool keep = false) override;

@@ -16,7 +16,7 @@ namespace {
 namespace fs=std::filesystem;
 using V=const json_value_s*;
 [[noreturn]] void bad(const std::string& why){throw std::runtime_error("Trust: "+why);}
-const std::set<std::string> scopes{"plugins","apps","content"};
+const std::set<std::string> scopes{"plugins","apps","content","repositories"};
 fs::path trustFile(){return dataHome()/"trust.json";}
 std::string str(V v){if(!v || v->type!=json_type_string)bad("trust.json is damaged");const auto* s=static_cast<const json_string_s*>(v->payload);return {s->string,s->string_size};}
 
@@ -76,7 +76,7 @@ void Session::setTrustedKey(const TrustedKey& key){
     TrustedKey t=key;t.id=signing::keyId(t.key);
     if(t.id.empty())throw std::invalid_argument("not a public key: 64 lowercase hex digits");
     if(t.name.empty() || t.name.size()>256)throw std::invalid_argument("a trusted key needs a name of at most 256 bytes");
-    for(const auto& s:t.scope)if(!scopes.count(s))throw std::invalid_argument("unknown trust scope "+s+"; plugins, apps or content");
+    for(const auto& s:t.scope)if(!scopes.count(s))throw std::invalid_argument("unknown trust scope "+s+"; plugins, apps, content or repositories");
     std::sort(t.scope.begin(),t.scope.end());t.scope.erase(std::unique(t.scope.begin(),t.scope.end()),t.scope.end());
     auto keys=readTrust();
     const auto at=std::find_if(keys.begin(),keys.end(),[&](const auto& k){return k.key==t.key;});
