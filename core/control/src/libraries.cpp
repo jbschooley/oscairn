@@ -60,6 +60,34 @@ namespace oscairn
                 return !relative.empty() && fs::is_regular_file(root / relative, e);
             }
 
+            // A sanitizer build (tests, never a release) links its runtime into every binary it makes, so
+            // a check run by such a build accepts that runtime too; a normal build still refuses it.
+#if defined(__has_feature)
+#if __has_feature(thread_sanitizer) || __has_feature(address_sanitizer) || __has_feature(undefined_behavior_sanitizer)
+#define OSCAIRN_SANITIZED 1
+#endif
+#endif
+#if defined(__SANITIZE_THREAD__) || defined(__SANITIZE_ADDRESS__)
+#define OSCAIRN_SANITIZED 1
+#endif
+            static bool sanitizerRuntime([[maybe_unused]] const std::string& library)
+            {
+#ifdef OSCAIRN_SANITIZED
+                const auto base = library.substr(library.find_last_of('/') + 1);
+                for(const char* prefix : {"libtsan.so", "libasan.so", "libubsan.so", "liblsan.so", "libclang_rt."})
+                    if(base.rfind(prefix, 0) == 0) return true;
+#endif
+                return false;
+            }
+            // The rpaths a sanitizer build adds on macOS so its runtime is found: the toolchain's clang folder.
+            static bool sanitizerRpath([[maybe_unused]] const std::string& rpath)
+            {
+#ifdef OSCAIRN_SANITIZED
+                return rpath == "@executable_path" || rpath.find("/lib/clang/") != std::string::npos;
+#else
+                return false;
+#endif
+            }
             // macOS: system libraries, or the bundle's own through @loader_path or @rpath.
             static bool systemDarwin(const std::string& p) { return p.rfind("/usr/lib/", 0) == 0 || p.rfind("/System/", 0) == 0; }
             void machO(const Bytes& b, uint64_t start, uint64_t size, const std::string& file, const std::string& from)
@@ -93,11 +121,12 @@ namespace oscairn
                 {
                     if(systemDarwin(r)) systemRpath = true;
                     else if(r.rfind("@loader_path", 0) == 0) ownRpaths.push_back(r.substr(12));
+                    else if(sanitizerRpath(r)) continue;
                     else problem(file, "rpath " + r + " (outside the bundle and the system)");
                 }
                 for(const auto& l : libraries)
                 {
-                    if(systemDarwin(l)) continue;
+                    if(systemDarwin(l) || sanitizerRuntime(l)) continue;
                     if(l.rfind("@loader_path/", 0) == 0) { if(!present(from, l.substr(13))) problem(file, l + " (not in the bundle)"); continue; }
                     if(l.rfind("@rpath/", 0) == 0)
                     {
@@ -190,7 +219,7 @@ namespace oscairn
                 for(const auto offset : needed)
                 {
                     const auto library = name(offset);
-                    if(library.find('/') == std::string::npos && system.count(library)) continue;
+                    if(library.find('/') == std::string::npos && (system.count(library) || sanitizerRuntime(library))) continue;
                     const bool found = library.find('/') == std::string::npos &&
                                        std::any_of(own.begin(), own.end(), [&](const std::string& r) { return present(from, (r.empty() ? std::string() : r.substr(1) + "/") + library); });
                     if(!found) problem(file, library + " (not in the bundle or the system's libraries)");

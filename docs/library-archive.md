@@ -99,7 +99,10 @@ or `readelf`, so a macOS build is checked on Linux too:
   plugins link ALSA through `juce_audio_devices` even when they never open a device), and the
   desktop's windowing and font libraries the image builds with it (`libX11.so.6`,
   `libXext.so.6`, `libXrandr.so.2`, `libXinerama.so.1`, `libXcursor.so.1`, `libXrender.so.1`,
-  `libfreetype.so.6`, `libfontconfig.so.1`). Not `libGL`: the image has none.
+  `libfreetype.so.6`, `libfontconfig.so.1`). Not `libGL`: the image has none. A sanitizer build of Oscairn
+  (tests, never a release) also accepts its sanitizer's runtime (`libtsan.so`, `libasan.so`,
+  `libubsan.so`, `liblsan.so`, `libclang_rt.*`) and the rpaths macOS adds to find it, since it
+  links that runtime into every binary it makes; a normal build refuses them.
 - A Mach-O or ELF file that does not parse is a problem too; other files (resources, scripts)
   are not checked, and Windows builds are not checked yet.
 
