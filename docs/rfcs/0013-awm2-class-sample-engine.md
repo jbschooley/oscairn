@@ -1,13 +1,15 @@
 # RFC 0013: An AWM2-class sample engine
 
-Status: proposed, 2026-10-30. Not implemented. Extends the Oscairn Sampler and the SFZ
+Status: in progress, built in the sfizz fork. Extends the Oscairn Sampler and the SFZ
 profile of [RFC 0008](0008-sfz-native-samples-and-conversion.md). Factory and user Yamaha
 waveforms reach it only through import, as described [below](#yamaha-content-import-not-inclusion).
 
-Note, 2026-11-06: the Sampler this RFC extends is now the Oscairn Legacy Sampler
-(`org.oscairn.legacy-sampler`), deprecated in favor of the sfizz-based Oscairn Sampler
-(`org.oscairn.sampler`). The plan below is unchanged; which engine it builds on is not yet
-decided.
+Note, 2026-11-06: the engine is the sfizz-based Oscairn Sampler (`org.oscairn.sampler`), in
+[oscairn/sfizz](https://github.com/oscairn/sfizz) on its `oscairn` branch, as an opt-in element
+layer over stock SFZ. Its plan, milestones and progress log are in that repository's
+`doc/oscairn-plan.md`, which maps its milestones to the steps below; the boxes here are ticked as
+its gates pass. The Sampler this RFC first meant to extend is now the deprecated Oscairn Legacy
+Sampler (`org.oscairn.legacy-sampler`).
 
 ## Progress
 

@@ -6,9 +6,9 @@ is recorded; step 2 is implemented as the Oscairn Legacy Sampler with the baseli
 [Step 2 status](#step-2-status)). Extension syntax is not defined.
 
 Note, 2026-11-06: the Sampler built in step 2 is now the Oscairn Legacy Sampler
-(`org.oscairn.legacy-sampler`), deprecated in favor of the sfizz-based Oscairn Sampler
-(`org.oscairn.sampler`). The later steps are unchanged here; which engine they build on is
-not yet decided.
+(`org.oscairn.legacy-sampler`), deprecated. The later steps build on the sfizz-based Oscairn
+Sampler (`org.oscairn.sampler`, [oscairn/sfizz](https://github.com/oscairn/sfizz)), which plays
+multisample SFZ and is where RFC 0013's engine is being built.
 
 ## Progress
 
