@@ -530,6 +530,13 @@ pairing.
 
 ## Open questions
 
+Decided by the owner, 2026-11-07: **apps keep raw file access, by permission.** "Remember we want this
+to be able to run things like the DJ deck too, and I think that would require raw file access."
+So RFC 0022's `files` grant is not dropped: an app such as a DJ deck may be granted read access to
+removable drives and folders the user chooses (and write access separately), shown at install as
+RFC 0022's permissions are. `assets.open` and the Library's picker stay as the way for apps that
+need only library content and no grant. The storage-size field in app manifests is accepted.
+
 - **Network control on over USB by default:** may a profile turn on RFC 0026's network control for
   the USB network interface out of the box, since a cable is physical, while Wi-Fi stays off?
 - **MTP later:** worth adding for computers without a browser handy, given macOS lacks a client?

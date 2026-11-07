@@ -488,6 +488,10 @@ control is offered on a device only after steps 2, 3, 4 and 6.
 
 ## Open questions
 
+Decided by the owner, 2026-11-07: **OSC is configurable in Settings.** Off by default; when turned on,
+the user chooses per interface between OSC only inside paired connections and the labeled
+unauthenticated exception (a source allow-list, Play methods only). RFC 0003's bridge follows it.
+
 - **The OSC bridge:** amend RFC 0026's "no unauthenticated network control" to allow it as a
   labeled exception (recommended), drop the UDP bridge, or carry OSC only inside the paired
   connection.

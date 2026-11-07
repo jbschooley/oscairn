@@ -185,7 +185,7 @@ what only apps do:
 | `audio` | An audio node in the graph (below) | a ported DAW |
 | `background` | `controls`, `midi` and `audio` while not in front | a sequencer played from pads while the Library is open |
 | `network` | Network sockets in its sandbox | the Store, a cloud library |
-| `files` | The library's files read-only, and drives through the shell's file picker | a DAW, a sample browser |
+| `files` | The library's files read-only, and raw read access to removable drives and folders the user chooses (write access granted separately); decided 2026-11-07 ([RFC 0037](0037-storage-and-file-transfer.md#open-questions)) | a DAW, a DJ deck, a sample browser |
 
 - **Every app** may read the session's state it needs to draw (`session.hello`, `session.status`,
   the `apps` topic for its own requests) and its own data folder; a setlist app asks for

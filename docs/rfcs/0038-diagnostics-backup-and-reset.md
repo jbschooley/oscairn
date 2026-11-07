@@ -427,6 +427,10 @@ nothing here bypasses the control API.
 
 ## Open questions
 
+Decided by the owner, 2026-11-07: **encrypting a backup is the user's choice** at backup time (the
+whole backup, or only its secrets); keys, pairings and credentials are always encrypted when
+included.
+
 Decided by the owner, 2026-11-07: **no upload for now.** Crash reports and support files are saved to
 USB or a paired computer only; hosting, retention and an opt-in upload are left for later.
 

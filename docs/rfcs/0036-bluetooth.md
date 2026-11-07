@@ -466,6 +466,10 @@ a product whose board lacks a radio but wants one. Which dongles support LE Audi
 
 ## Open questions
 
+From the owner, 2026-11-07 (to verify on the hardware): **the KICK and the Ignite are believed to
+have Bluetooth; the MODX M is believed not to** ("maybe it's there in hardware but not supported in
+software"), so its products build without Bluetooth (RFC 0035's rule).
+
 Decided by the owner, 2026-11-07: **headphones mirror Main by default, as a setting** the user can
 change to replace the speakers while they are connected. The Linux stack (BlueALSA or PipeWire
 for Bluetooth only) is still open: the owner finds LE Audio and BLE MIDI timestamps useful and
