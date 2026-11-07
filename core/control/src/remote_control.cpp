@@ -188,7 +188,7 @@ namespace oscairn
             status.audioInputs=channels(field(v,"audioInputs"));status.audioOutputs=channels(field(v,"audioOutputs"));
             status.audioReady=boolean(field(v,"audioReady"));
             status.graphEventDrops=integer(field(v,"graphEventDrops"));status.midiEventDrops=integer(field(v,"midiEventDrops"));
-            status.deadlineMisses=integer(field(v,"deadlineMisses"));status.midiInputs.clear();status.midiOutputs.clear();status.failures.clear();status.workers.clear();
+            status.deadlineMisses=integer(field(v,"deadlineMisses"));status.audioUnderruns=integer(field(v,"audioUnderruns"));status.midiInputs.clear();status.midiOutputs.clear();status.failures.clear();status.workers.clear();
             for(auto f:array(field(v,"failures")))status.failures.push_back({static_cast<NodeId>(integer(field(f,"node"))),string(field(f,"name")),string(field(f,"reason"))});
             status.notices.clear();for(auto n:array(field(v,"notices")))status.notices.push_back(string(n));
             for(auto w:array(field(v,"workers")))status.workers.push_back({static_cast<NodeId>(integer(field(w,"node"))),string(field(w,"name")),number(field(w,"cpu")),uint64_t(integer(field(w,"memory"))),number(field(w,"block")),number(field(w,"blockMax"))});

@@ -7583,6 +7583,11 @@
           "type": "integer",
           "minimum": 0
         },
+        "audioUnderruns": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "The audio device's underruns and overruns since it last started: ALSA's xruns, CoreAudio's overloads, or callbacks more than a buffer late where the device reports none"
+        },
         "audioInputs": {
           "type": "array",
           "items": {
@@ -7730,6 +7735,7 @@
         "bufferSize",
         "cpuLoad",
         "deadlineMisses",
+        "audioUnderruns",
         "graphEventDrops",
         "midiEventDrops",
         "audioInputs",

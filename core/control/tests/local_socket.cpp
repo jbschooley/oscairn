@@ -297,7 +297,8 @@ namespace
     void typedClient(const char* plugin)
     {
         Fixture f(plugin);auto fd=pair();f.server.adopt(fd[0]);
-        f.session.setHostStatus({"Test device",{{MidiEndpoint::Kind::Port,3,"Test MIDI",2}},48000,.25,64,7,{{2,"Input 3",true}},{{4,"Output 5",true},{5,"Output 6",false}},false});
+        Control::SessionStatus host{"Test device",{{MidiEndpoint::Kind::Port,3,"Test MIDI",2}},48000,.25,64,7,{{2,"Input 3",true}},{{4,"Output 5",true},{5,"Output 6",false}},false};
+        host.audioUnderruns=3;f.session.setHostStatus(host);
         clientWhileRendering(f,[&]{
             LocalClient client;client.adopt(fd[1]);RemoteControl remote(client);
             const auto synth=remote.nodeId("synth");
@@ -314,6 +315,7 @@ namespace
             remote.setBudget({});
             check(remote.sessionStatus().audioDevice=="Test device" && remote.sessionStatus().midiInputs==std::vector<MidiEndpoint>{{MidiEndpoint::Kind::Port,3,"Test MIDI",2}},"host status crosses socket");
             check(remote.sessionStatus().audioInputs[0].deviceChannel==2 && !remote.sessionStatus().audioReady && !remote.sessionStatus().audioOutputs[1].available,"device mapping and unavailable channels cross socket");
+            check(remote.sessionStatus().audioUnderruns==3 && remote.sessionStatus().deadlineMisses>=7,"the device's underruns cross the socket, apart from deadline misses");
             const auto port=remote.graphState().topology.nodes[0].outputs[0].id;
             const AudioConnection route{{synth,port,0},{graphOutput,0,1},1,.5};
             const auto initial=remote.graphState().topology.audioRoutes.size();

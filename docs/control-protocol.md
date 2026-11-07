@@ -99,7 +99,7 @@ request members.
 | --- | --- | --- |
 | `session.hello` | omitted or `{}` | `protocolVersion`, `server`, supported methods and optional features in `capabilities`, `limits` |
 | `engine.attach`, `engine.release` | `{}` | `{"accepted":true}`. A UI attaches when it connects to a managed engine and releases it when it quits normally; the managed engine stops once every attached client has released it. A client that disconnects while attached (a crash) keeps the engine running until a client attaches again, or the last attached client still connected releases it; clients that never attach (background jobs) do not count. Engines started without `--managed` ignore both |
-| `session.status` | omitted or `{}` | `audioDevice`, `midiInputs` (each `{"source","name","kind","port"}`, below), `midiOutputs` (the same shape; `source` is the output's own number, from 1), `sampleRate`, `bufferSize`, `cpuLoad`, `deadlineMisses`, `graphEventDrops`, `midiEventDrops`, `audioReady`, mapped `audioInputs`/`audioOutputs`, `failures`: each plugin that has failed and is silent (`node`, `name`, `reason`), `notices`: what the last Performance load, Sound or import passed over without failing (an optional asset missing), as text, and `workers`: each plugin in its own worker process with the CPU time it has used in seconds, restarts included, its memory in bytes, and the microseconds its last block took inside the worker and the most any block has (`node`, `name`, `cpu`, `memory`, `block`, `blockMax`) |
+| `session.status` | omitted or `{}` | `audioDevice`, `midiInputs` (each `{"source","name","kind","port"}`, below), `midiOutputs` (the same shape; `source` is the output's own number, from 1), `sampleRate`, `bufferSize`, `cpuLoad`, `deadlineMisses`, `audioUnderruns`, `graphEventDrops`, `midiEventDrops`, `audioReady`, mapped `audioInputs`/`audioOutputs`, `failures`: each plugin that has failed and is silent (`node`, `name`, `reason`), `notices`: what the last Performance load, Sound or import passed over without failing (an optional asset missing), as text, and `workers`: each plugin in its own worker process with the CPU time it has used in seconds, restarts included, its memory in bytes, and the microseconds its last block took inside the worker and the most any block has (`node`, `name`, `cpu`, `memory`, `block`, `blockMax`) |
 | `state.info` | `{"node":"synth"}` | `{"supported":true}` when opaque state export is available |
 | `state.save` | `{"node":"synth","directory":"/path/to/new-state"}` | `{"saved":true}` after publishing a new state directory |
 | `window.info` | `{"node":"synth"}` | `{"available":true}` when the plugin has a window of its own (CLAP's GUI extension) that this engine can show |
@@ -429,7 +429,11 @@ the first poll. Re-subscribing does not discard already unread changes.
   `cpuLoad` is the device callback load as a fraction (1 means the entire block budget),
   not whole-machine CPU usage. `deadlineMisses` sums plugin deadline misses for nodes
   currently in the staging graph; it is not an audio-device underrun counter and may
-  decrease when nodes are removed. Without device I/O, names are empty and the session
+  decrease when nodes are removed. `audioUnderruns` is that counter: the audio device's
+  underruns and overruns since it last started, as the platform reports them (ALSA's xruns on
+  Linux, CoreAudio's processor-overload notifications on macOS, through JUCE's
+  `getXRunCount`); where a device reports none, the callbacks that arrived more than one
+  buffer late. It is 0 without device I/O. Without device I/O, names are empty and the session
   reports its configured sample rate and maximum block size. `graphEventDrops` counts
   destination events discarded by graph merge or note-ownership overflow. If a destination
   exceeds its 512-note budget (its block's beat and harmony events have their own room), the

@@ -94,6 +94,8 @@ namespace oscairn
             std::vector<MidiEndpoint> midiOutputs; // its MIDI outputs, numbered from 1 apart from the inputs, for parts' MIDI out and clock
             // What the last Performance load, Sound or import passed over without failing: an optional asset missing.
             std::vector<std::string> notices;
+            // The audio device's underruns and overruns since it started, as the host counts them (RFC 0035).
+            uint64_t audioUnderruns = 0;
         };
         virtual SessionStatus sessionStatus() const = 0;
         struct GraphState

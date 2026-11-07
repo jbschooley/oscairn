@@ -95,6 +95,9 @@ namespace oscairn::host
                 std::vector<Control::DeviceChannel> result;for(auto i:selected)result.push_back({i,i<static_cast<uint32_t>(names.size())?names[static_cast<int>(i)].toStdString():"Unavailable",active[static_cast<int>(i)]});return result;};
             status.audioInputs=describe(channelMap_.configuration().inputs,device->getInputChannelNames(),device->getActiveInputChannels());
             status.audioOutputs=describe(channelMap_.configuration().outputs,device->getOutputChannelNames(),device->getActiveOutputChannels());
+            // ALSA's underruns and overruns, CoreAudio's overload notifications; -1 where JUCE has none.
+            const auto xruns=device->getXRunCount();
+            status.audioUnderruns=xruns>=0?uint64_t(xruns):lateCallbacks_.load(std::memory_order_relaxed);
         }
         status.audioReady=started_.load();
         status.cpuLoad = devices_.getCpuUsage();
@@ -261,6 +264,7 @@ namespace oscairn::host
         const auto required=(!config.explicitOutputs && initialOutputs_.size()==1)?1:ChannelMap::required(config.outputs);
         for(uint32_t i=0;i<required;++i)valid=valid && outputMask[static_cast<int>(i)];
         outputLatencyMs_=(device->getOutputLatencyInSamples()+device->getCurrentBufferSizeSamples())*1000.0/device->getCurrentSampleRate();
+        lastCallback_=0;lateCallbacks_=0;
         started_=valid;
     }
 
@@ -269,6 +273,8 @@ namespace oscairn::host
     {
         if(numSamples<=0)return;
         const double now=juce::Time::getMillisecondCounterHiRes()*0.001;
+        if(lastCallback_>0 && now-lastCallback_>2.0*numSamples/sampleRate_)lateCallbacks_.fetch_add(1,std::memory_order_relaxed);
+        lastCallback_=now;
         if(!started_ || numOutputs<1)
         {for(int c=0;c<numOutputs;++c)if(outputs[c])std::fill_n(outputs[c],numSamples,0.f);return;}
         // Device timestamps belong to this adapter. The core receives sample times,

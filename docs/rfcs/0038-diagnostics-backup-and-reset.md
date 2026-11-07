@@ -73,8 +73,8 @@ What the code does today (2026-11-07):
 - **Deadline misses:** each plugin host counts blocks whose `process` took longer than the
   block's time (`Statistics::deadlineMisses` in `core/clap-host`, and the worker's own count in
   `WorkerHost`); `session.status`'s `deadlineMisses` is their sum over the nodes in the graph at
-  that moment. It has no history or times, falls when a node is removed, and the audio device's
-  own overruns are not counted (`AudioEngine` does not fill it).
+  that moment. It has no history or times and falls when a node is removed. The audio device's
+  own underruns and overruns are `audioUnderruns` beside it (RFC 0035), since the device started.
 - **Measurements** (RFC 0025) are kept in `measurements.json` in the data folder.
 - **Backup:** none. The library exports items as `.olib` archives with their samples and plugin
   builds; the [architecture](../architecture.md) promises "one bundle format, three scopes: a

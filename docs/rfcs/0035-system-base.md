@@ -97,7 +97,11 @@ schedules the guest's CPUs as host threads, as RFC 0010's container measurements
 numbers show the VM's scheduling"). The engine already counts what matters to the music:
 `session.status` reports `cpuLoad` (the callback's share of the block) and `deadlineMisses`, but
 the latter sums plugin workers' misses and "is not an audio-device underrun counter"
-([control protocol](../control-protocol.md)). Nothing counts the ALSA underruns themselves.
+([control protocol](../control-protocol.md)). Beside it, `audioUnderruns` counts the device's
+own underruns and overruns since it started: ALSA's xruns on Linux and CoreAudio's overload
+notifications on macOS, as JUCE's `getXRunCount` gives them, and where a device gives none, the
+callbacks that arrived more than a buffer late (`hosts/audio/AudioEngine.cpp`). It has not been
+watched counting a real xrun on the image or a board.
 
 ### The kernel
 

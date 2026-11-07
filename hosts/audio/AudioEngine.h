@@ -66,6 +66,10 @@ namespace oscairn::host
         std::string initialDevice_;
         juce::StringArray initialInputs_,initialOutputs_;
         std::atomic<bool>        started_{ false }; // the device's rate matched the graph's
+        // Callbacks that came more than a buffer late, counted as underruns where the device
+        // reports none of its own (audio thread; reset when the device starts).
+        std::atomic<uint64_t>    lateCallbacks_{ 0 };
+        double                   lastCallback_ = 0;
 
         // Physical MIDI to the audio thread: many producers, serialized by the mutex
         // (never taken on the audio thread), one consumer.
