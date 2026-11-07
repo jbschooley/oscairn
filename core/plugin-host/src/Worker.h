@@ -33,6 +33,7 @@ namespace oscairn::worker
         // outputChannels ends with ringOutChannels (4 for a plugin with a ring-out buffer, RFC 0005, else
         // 0); ringOut: this block's caller asked for them.
         uint32_t ringOutChannels = 0, ringOut = 0;
+        uint32_t reset = 0; // the worker's: the plugin was reset in the last block (wasReset); nonzero is true
         double sampleRate = 48000;
         clap_event_transport_t transport{};
         // oscairn.voice-budget (RFC 0018). The engine's: when setLimits, the limits the plugin takes

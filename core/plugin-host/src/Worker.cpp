@@ -267,6 +267,7 @@ namespace oscairn::worker
                 s.deadlineMisses.store(st.deadlineMisses); s.controlSilences.store(st.controlSilences); s.idleBlocks.store(st.idleBlocks);
                 s.lastMicroseconds.store(st.lastMicroseconds); s.maximumMicroseconds.store(st.maximumMicroseconds);
                 s.asleep.store(host.asleep() ? 1 : 0, std::memory_order_relaxed);
+                s.reset = host.wasReset();
                 {
                     double cost = 0; const oscairn_voice_budget_note_t* notes = nullptr; uint32_t noteCount = 0;
                     s.activeVoices = host.voiceReport(cost, notes, noteCount); s.voiceCost = cost;

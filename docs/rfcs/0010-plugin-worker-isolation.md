@@ -86,6 +86,9 @@ The block also carries `oscairn.voice-budget`
 ([RFC 0018](0018-voice-budget-and-stealing.md#step-4-status)): the limits the plugin takes before
 it, and the voices and notes it reports after it, which the engine bounds, as it bounds every
 count of output events the worker writes.
+It also says whether the worker's host reset the plugin in the block (a panic, or events it
+could not take), which ends every note the plugin was sent, so the engine's graph forgets them
+as it does for a plugin in its own process; any nonzero value counts as a reset.
 
 This keeps same-block, sample-accurate routing with no added latency, at the cost of one wake
 and one completion per worker per block. Independent graph branches in different workers can

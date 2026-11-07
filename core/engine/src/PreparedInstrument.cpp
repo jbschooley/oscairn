@@ -245,7 +245,7 @@ public:
     }
     uint64_t outputEventDrops() const noexcept override {uint64_t n=drops_.load();for(const auto& s:desired_.instances)if(s)n+=s->host->outputEventDrops();return n;}
     const Event* outputEvents(uint32_t& n) const noexcept override {n=outputCount_;return output_.data();}
-    bool asleep_=false; // audio thread
+    bool asleep_=false,reset_=false; // audio thread
     kick::clap::Statistics statistics() const noexcept override {
         kick::clap::Statistics result{};
         for(const auto& s:desired_.instances)if(s){const auto v=s->host->statistics();
@@ -255,7 +255,7 @@ public:
         result.droppedEvents+=drops_.load();result.processErrors+=errors_.load();return result;
     }
     bool process(const float* const*,uint32_t,float* const* outputs,uint32_t no,uint32_t frames,const Event* events,uint32_t count,const clap_event_transport_t* transport) noexcept override {
-        outputCount_=0;
+        outputCount_=0;reset_=false;
         for(uint32_t c=0;c<no;++c)if(outputs && outputs[c])std::fill_n(outputs[c],frames,0.f);
         if(frames>frames_ || (count && !events) || count>eventCapacity){++errors_;panic_.store(true);return false;}
         if(retiredCount_.load()<32)if(auto* next=pending_.exchange(nullptr,std::memory_order_acq_rel)){
@@ -299,14 +299,16 @@ public:
             }
         }
         if(!ok){++drops_;silence();}
-        asleep_=true;
+        asleep_=true;uint32_t ran=0,resets=0;
         for(auto& s:current_->instances)if(s && s->running){
             s->rendered.store(true);
-            if(!s->host->process(nullptr,0,s->outputs.data(),s->outputs.size(),frames,s->events.data(),s->count,transport)){
-                // This instance resets and ends its own notes; a failure reported upward would make
-                // the graph reset the whole node, cutting the other sounds' notes too.
-                s->host->panic();for(const auto& n:s->notes.notes)if(n.used)ended(n,0);s->notes.clear();
-            }
+            const bool rendered=s->host->process(nullptr,0,s->outputs.data(),s->outputs.size(),frames,s->events.data(),s->count,transport);
+            // This instance resets and ends its own notes; a failure reported upward would make
+            // the graph reset the whole node, cutting the other sounds' notes too. One the host
+            // reset on its own ended them already, with no NOTE_END.
+            if(!rendered)s->host->panic();
+            const bool reset=!rendered || s->host->wasReset();++ran;resets+=reset;
+            if(reset){for(const auto& n:s->notes.notes)if(n.used)ended(n,0);s->notes.clear();}
             for(size_t c=0;c<std::min<size_t>(no,s->outputs.size());++c)if(outputs && outputs[c])
                 for(uint32_t f=0;f<frames;++f)outputs[c][f]+=s->outputs[c][f];
             uint32_t n=0;const auto* emitted=s->host->outputEvents(n);
@@ -319,10 +321,13 @@ public:
             s->owned.store(std::count_if(s->notes.notes.begin(),s->notes.notes.end(),[](const auto& n){return n.used;}));
             asleep_=asleep_ && s->host->asleep();
         }
+        reset_=ran && resets==ran;
         applied_.store(current_->revision);return ok;
     }
     // Asleep when every instance that ran this block said so (audio thread, after process).
     bool asleep() const noexcept override {return asleep_;}
+    // Every instance that ran this block was reset (audio thread, after process): every note ended.
+    bool wasReset() const noexcept override {return reset_;}
     // oscairn.voice-budget (RFC 0018), audio thread: the instance channel 1 plays, as process() last had it.
     PluginHost& playing() const noexcept {return *current_->instances[current_->selected[0]]->host;}
     bool voiceBudget() const noexcept override {return playing().voiceBudget();}

@@ -244,6 +244,9 @@ public:
     // Audio thread: the plugin's last process() asked to sleep (CLAP_PROCESS_SLEEP): it makes no
     // sound until it gets input or events.
     bool asleep() const noexcept;
+    // Audio thread, after process(): it reset the plugin (a panic, or events it could not take),
+    // ending every note it was sent, this call's too; CLAP's reset sends no NOTE_END for them.
+    bool wasReset() const noexcept;
 
     bool enqueue(const Event&) noexcept; // bounded multi-producer queue
     bool popOutput(Event&) noexcept; // main/control-thread consumer of parameter output

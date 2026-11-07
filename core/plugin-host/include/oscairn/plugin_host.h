@@ -138,6 +138,10 @@ namespace oscairn
         // Audio thread, after process(): the plugin said it makes no more sound until it gets
         // input (CLAP_PROCESS_SLEEP). False where a host cannot tell.
         virtual bool asleep() const noexcept { return false; }
+        // Audio thread, after process() (finishProcess): the host reset the plugin in it, on its own
+        // (a panic, an event overflow), which ends every note it was sent, that call's too, with no
+        // NOTE_END (CLAP's reset has no output events). False where it cannot tell.
+        virtual bool wasReset() const noexcept { return false; }
         // Control thread: the memory a plugin in its own worker holds (its share of the worker's
         // physical footprint on macOS, resident memory on Linux); 0 where the host cannot tell (a
         // plugin in the engine's process).

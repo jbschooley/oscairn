@@ -1221,11 +1221,11 @@ namespace oscairn
                     const auto heard=onChannel(step.merged[i],step.heardOn[i]);listener->events(c.id,&heard,1,false);
                 }
             const bool processed=step.processed;
-            if(!processed) {
-                // A busy control gate can discard a release; reset when rendering resumes.
-                step.host->panic();
-                for(auto& source:step.noteSources)source.route->clear();
-            }
+            // A busy control gate can discard a release; reset when rendering resumes. A host that
+            // reset the plugin on its own ended every note it was sent, with no NOTE_END: a shared
+            // engine's, every context's.
+            if(!processed)step.host->panic();
+            if(!processed || step.host->wasReset())for(auto& source:step.noteSources)source.route->clear();
             ok &= processed;
             if(listener && processed){uint32_t sent=0;const auto* list=step.host->outputEvents(sent);listener->events(step.id,list,sent,true);}
             auto meter=[&](const auto& peaks,uint32_t from,uint32_t count){

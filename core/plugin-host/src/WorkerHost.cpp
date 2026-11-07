@@ -728,6 +728,7 @@ namespace oscairn
             }
             // As the plugin said in its last block; a failed worker is silent, so asleep too.
             bool asleep() const noexcept override { return process_->failed.load() || shared_->asleep.load(std::memory_order_relaxed) != 0; }
+            bool wasReset() const noexcept override { return reset_; }
             double parameterValue(clap_id id) const noexcept override
             {
                 const auto i = index_.find(id);
@@ -766,7 +767,7 @@ namespace oscairn
             bool process(const float* const* inputs, uint32_t ni, float* const* outputs, uint32_t no, uint32_t frames,
                          const kick::clap::Event* events, uint32_t count, const clap_event_transport_t* transport) noexcept override
             {
-                outputCount_ = 0; sysexOutput_->used = 0;
+                outputCount_ = 0; sysexOutput_->used = 0; reset_ = false;
                 if(frames <= capacity_) return block(inputs, ni, outputs, no, frames, events, count, transport, 0);
                 // Larger than the shared buffer: split as the in-engine host does, rebasing events,
                 // transport and output event times.
@@ -800,6 +801,7 @@ namespace oscairn
                             position.song_pos_beats += clap_beattime((double(done) / rate) * position.tempo / 60. * CLAP_BEATTIME_FACTOR);
                     }
                     ok = block(inputs ? in : nullptr, ni, out, no, n, chunk_.data(), chunkCount, transport ? &position : nullptr, done) && ok;
+                    if(reset_ && done + n < frames) panic(); // the later chunks' notes end too, as wasReset says
                     done += n;
                 }
                 return ok;
@@ -809,7 +811,7 @@ namespace oscairn
                               const kick::clap::Event* events, uint32_t count, const clap_event_transport_t* transport) noexcept override
             {
                 if(!frames || frames > capacity_) return false;
-                outputCount_ = 0; sysexOutput_->used = 0;
+                outputCount_ = 0; sysexOutput_->used = 0; reset_ = false;
                 started_ = start(inputs, ni, outputs, no, frames, events, count, transport, 0);
                 return true;
             }
@@ -990,6 +992,7 @@ namespace oscairn
                         if(!(std::isfinite(n.loudness) && n.loudness > 0)) n.loudness = 0;
                     }
                 }
+                reset_ = reset_ || s.reset != 0;
                 return s.ok;
             }
 
@@ -1072,6 +1075,7 @@ namespace oscairn
             std::atomic<int64_t> requestedAt_{0};
             std::atomic<bool> tooSlow_{false}, busy_{false};
             std::atomic<uint64_t> workerMisses_{0};
+            bool reset_ = false; // audio thread: wasReset, from the worker's blocks in the last call
             uint32_t sequence_ = 0, outputCount_ = 0, consecutiveMisses_ = 0, generation_ = 0, faded_ = 0, fadeFrames_ = 0;
             // The block start handed over, for finish.
             float* const* startedOutputs_ = nullptr; uint32_t startedChannels_ = 0, startedFrames_ = 0, startedOffset_ = 0; bool started_ = false;

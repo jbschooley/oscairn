@@ -264,6 +264,7 @@ struct Host::Impl {
     // inProcess is set and published to the caller when the call returns.
     std::array<Event, maxBlockEvents> blockOutput;
     uint32_t blockOutputCount = 0, publishedOutputCount = 0;
+    bool resetInProcess = false; // audio thread: wasReset()
     SysexPool sysexOutput; // the bytes of blockOutput's SysEx events
     bool inProcess = false;
     uint32_t chunkCount = 0;
@@ -1161,6 +1162,7 @@ bool Host::stateDirty() const noexcept { return impl->dirty.load(); }
 uint64_t Host::parameterReports() const noexcept { return impl->parameterReports.load(std::memory_order_acquire); }
 uint32_t Host::latency() const noexcept { return impl->latencyFrames.load(); }
 bool Host::asleep() const noexcept { return impl->sleeping; }
+bool Host::wasReset() const noexcept { return impl->resetInProcess; }
 Statistics Host::statistics() const noexcept { auto& s = *impl; return {s.blocks.load(), s.dropped.load(), s.errors.load(), s.lastUs.load(), s.maxUs.load(), s.deadlineMisses.load(), s.controlSilences.load(), s.idleBlocks.load()}; }
 bool Host::enqueue(const Event& e) noexcept {
     auto& s = *impl;
@@ -1188,7 +1190,7 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
                    const Event* incoming, uint32_t count, const clap_event_transport_t* transport) noexcept {
     auto& s = *impl;
     auto silence = [&] { if (output) for (uint32_t c = 0; c < no; ++c) if (output[c]) std::fill_n(output[c], frames, 0.f); };
-    s.publishedOutputCount = 0;
+    s.publishedOutputCount = 0; s.resetInProcess = false;
     if (!frames) return true;
     // A note-only plugin (no audio outputs) may be processed with no output buffers.
     if ((no && !output) || (count && !incoming)) { silence(); return false; }
@@ -1259,7 +1261,7 @@ bool Host::process(const float* const* input, uint32_t ni, float* const* output,
         if (s.panic.exchange(false)) {
             // Never leave a stuck gate after an event overflow. Reset is an
             // audio-thread operation and covers every note channel and port.
-            s.plugin->reset(s.plugin); total = 0; s.sleeping = false; s.haveHarmony = false; // the harmony comes again next block
+            s.plugin->reset(s.plugin); total = 0; s.resetInProcess = true; s.sleeping = false; s.haveHarmony = false; // the harmony comes again next block
         }
         std::sort(s.ordered.begin(), s.ordered.begin() + total, [](const Impl::TimedEvent& a, const Impl::TimedEvent& b) {
             return a.event.header()->time < b.event.header()->time ||
