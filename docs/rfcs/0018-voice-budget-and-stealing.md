@@ -431,6 +431,10 @@ budget among the rest.
 ## Open questions
 
 - The soft and hard limits, and the fade time, on the real device.
+- How much one slow block should move a note's cost. One held-up block makes the next note-on
+  give up several notes at once (5 to 8 in test runs, bass and melody included), since a sample
+  may count up to 4 times the estimate and estimates fall faster than they rise. Seen only on
+  test threads without real-time priority; kept as it is for now, to revisit if it shows live.
 - Whether a note's measured cost should be split by key range or velocity, since sample
   playback costs vary.
 - Whether effects with long tails (reverbs) should give way too, by shortening tails, or
