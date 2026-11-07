@@ -107,7 +107,7 @@ target_compile_options(oscairn-sign PRIVATE -Wall -Wextra)
 add_executable(oscairn-archives-test tests/archives.cpp)
 target_include_directories(oscairn-archives-test SYSTEM PRIVATE third_party)
 target_link_libraries(oscairn-archives-test PRIVATE oscairn_control)
-add_test(NAME control-archives COMMAND oscairn-archives-test $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn-sign>)
+add_test(NAME control-archives COMMAND oscairn-archives-test $<TARGET_FILE:kick-clap-fixture-normal> $<TARGET_FILE:oscairn-sign> $<TARGET_FILE:oscairn_splitters>)
 if(Python3_Interpreter_FOUND)
     # The package repository template's index builder (RFC 0031), signed with oscairn-sign.
     add_test(NAME package-repository-index COMMAND "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/package-repository/test_build_index.py" $<TARGET_FILE:oscairn-sign>)

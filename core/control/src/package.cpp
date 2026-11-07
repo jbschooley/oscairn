@@ -329,6 +329,7 @@ namespace oscairn
             {
                 Package::Plugin plugin{text(detail::member(e->value, "format")), text(detail::member(e->value, "id")), text(detail::member(e->value, "version")), text(detail::member(e->value, "name")), {}};
                 if((plugin.format != "clap" && plugin.format != "lv2") || plugin.id.empty() || plugin.id.size() > 256 || plugin.version.size() > 128) bad("a plugin's format, ID or version is wrong");
+                if(std::any_of(p.plugins.begin(), p.plugins.end(), [&](const auto& q) { return q.format == plugin.format && q.id == plugin.id && q.version == plugin.version; })) bad("a plugin listed twice: " + plugin.id);
                 const V builds = detail::member(e->value, "builds");
                 if(!builds || builds->type != json_type_array) bad("a plugin lists no builds");
                 for(auto* b = static_cast<const json_array_s*>(builds->payload)->start; b; b = b->next)

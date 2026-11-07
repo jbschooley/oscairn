@@ -11,7 +11,8 @@
 // plays it; what used it then opens with a stand-in until it is installed again.
 // Signatures (RFC 0006): oscairn-sign signs a build and an archive, an export carries the build's
 // signature and signs its items and the whole archive when asked.
-//   oscairn-archives-test FIXTURE.clap OSCAIRN-SIGN
+// A plugin package carries one bundle holding several plugins (Oscairn's Splitters) once.
+//   oscairn-archives-test FIXTURE.clap OSCAIRN-SIGN [SPLITTERS.clap]
 #include "oscairn/session.h"
 #include "oscairn/package.h"
 #include "miniz/miniz.h"
@@ -67,9 +68,10 @@ namespace
 
 int main(int argc, char** argv)
 {
-    if(argc < 3) { std::fprintf(stderr, "usage: %s FIXTURE OSCAIRN-SIGN\n", argv[0]); return 2; }
+    if(argc < 3) { std::fprintf(stderr, "usage: %s FIXTURE OSCAIRN-SIGN [SPLITTERS.clap]\n", argv[0]); return 2; }
     const char* fixture = argv[1];
     const std::string tool = shell(argv[2]);
+    const char* splitters = argc > 3 ? argv[3] : nullptr;
     try
     {
         state_files::TemporaryDirectory temp;
@@ -468,6 +470,48 @@ int main(int argc, char** argv)
             check(p.libraries().empty() && !fs::exists(temp.path / "p" / "Libraries" / read.id), "asked as a library, it is not one");
             p.add("synth", (folders[0] / "Synth.clap").string(), "org.kick.test.synth"); p.commit();
             check(p.sessionStatus().failures.empty() && p.graphState().topology.nodes.size() == 1, "the installed build plays");
+        }
+        // Device S: one bundle holding two plugins, Oscairn's Splitters (Split and Join): packed once,
+        // each plugin signed, both installed into the store and listed, and both play from it.
+        if(splitters)
+        {
+            device(temp.path / "s");
+            const auto author = temp.path / "author.key";
+            const auto build = temp.path / "s-build" / "oscairn-splitters.clap";
+            fs::create_directories(build.parent_path());
+            fs::copy(splitters, build, fs::copy_options::recursive);
+            const auto signedBoth = run(tool + " build " + shell(author) + " clap org.oscairn.split,org.oscairn.join 0.1.0 " + platform() + " " + shell(build));
+            check(signedBoth.first == 0 && signing::readSignatures(build.string() + ".sig").size() == 2, "the bundle is signed for each plugin: " + signedBoth.second);
+            const auto package = temp.path / "Splitters.olib";
+            const auto packed = run(tool + " plugin-package --key " + shell(author) + " --plugin org.oscairn.split 'Oscairn Split' --plugin org.oscairn.join 'Oscairn Join' " + shell(package) +
+                                    " clap org.oscairn.splitters 0.1.0 'Oscairn Splitters' " + platform() + "=" + shell(build) + " 2>&1");
+            check(packed.first == 0 && packed.second.find("packed clap org.oscairn.split, org.oscairn.join 0.1.0 with 1 builds") != std::string::npos, "oscairn-sign packs a bundle with two plugins: " + packed.second);
+            const auto read = readPackage(package, {});
+            check(read.id == "org.oscairn.splitters" && read.plugins.size() == 2 && read.plugins[0].builds.at(0).path == read.plugins[1].builds.at(0).path &&
+                  read.plugins[0].builds[0].signatures.size() == 1 && read.plugins[1].builds[0].signatures.size() == 1, "the bundle is in it once, listed and signed for each plugin");
+            mz_zip_archive z{}; mz_zip_reader_init_file(&z, package.c_str(), 0);
+            const auto entries = mz_zip_reader_get_num_files(&z); mz_zip_reader_end(&z);
+            check(entries == 3, "the archive holds the bundle once: " + std::to_string(entries) + " entries");
+            // A signature over another ID, such as a preset-discovery provider's, is not packed.
+            const auto provider = temp.path / "s-provider" / "oscairn-splitters.clap";
+            fs::create_directories(provider.parent_path());
+            fs::copy(build, provider);
+            run(tool + " build " + shell(author) + " clap org.oscairn.split,org.oscairn.join,org.oscairn.splitters.presets 0.1.0 " + platform() + " " + shell(provider));
+            const auto extra = run(tool + " plugin-package --plugin org.oscairn.split Split --plugin org.oscairn.join Join " + shell(temp.path / "Provider.olib") + " clap org.oscairn.splitters 0.1.0 Splitters " + platform() + "=" + shell(provider) + " 2>&1");
+            check(extra.first != 0 && extra.second.find("not over this build of org.oscairn.split, org.oscairn.join") != std::string::npos && !fs::exists(temp.path / "Provider.olib"),
+                  "a signature over an ID not packed is refused: " + extra.second);
+            Session s(48000, 64);
+            s.setTrustedKey({"", authorKey, "Author", {"plugins"}});
+            const auto installed = s.installArchive(package.string(), false);
+            check(installed.notes.empty() && installed.code.size() == 2 && installed.code[0].status == "trusted" && installed.code[1].status == "trusted", "both plugins install, each trusted");
+            const auto listed = s.installedPlugins();
+            check(listed.size() == 2 && listed[0].id == "org.oscairn.join" && listed[1].id == "org.oscairn.split" && listed[0].platforms == std::vector<std::string>{platform()} &&
+                  listed[1].platforms == std::vector<std::string>{platform()}, "the store lists each plugin");
+            const auto stored = [&](const char* id) { return temp.path / "s" / "Plugins" / "clap" / pluginFolderName(id, "0.1.0") / platform() / build.filename(); };
+            const auto split = stored("org.oscairn.split"), join = stored("org.oscairn.join");
+            check(fs::exists(split) && fs::exists(join) && bundleDigest(split) == bundleDigest(build) && bundleDigest(join) == bundleDigest(build), "each has the whole bundle in the store");
+            s.add("split", split.string(), "org.oscairn.split"); s.add("join", join.string(), "org.oscairn.join"); s.commit();
+            check(s.sessionStatus().failures.empty() && s.graphState().topology.nodes.size() == 2, "both load from the store");
         }
         // A build path without its .clap or .lv2: the store keeps bundles by extension, so such a
         // build installs into the store and is never found again. readPackage refuses it.

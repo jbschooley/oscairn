@@ -1927,7 +1927,7 @@ Control::Installed Session::installUnpacked(const Package& p,const fs::path& int
             const std::unique_ptr<json_value_s,decltype(&std::free)> doc{json_parse(bytes.data(),bytes.size()),&std::free};
             for(auto node:array(field(doc.get(),"nodes"),256)){const V plugin=field(node,"plugin");used.insert({text(field(plugin,"format")),text(field(plugin,"id")),text(field(plugin,"version"))});}
         }
-        std::set<std::string> revoked; // build paths not installed
+        std::set<std::pair<std::string,std::string>> revoked; // builds not installed, by plugin ID and path (a bundle holding several plugins is listed for each)
         std::string unknown;
         for(const auto& plugin:p.plugins){
             if(!used.count({plugin.format,plugin.id,plugin.version}))continue;
@@ -1936,7 +1936,7 @@ Control::Installed Session::installUnpacked(const Package& p,const fs::path& int
                 if(there.count(build.platform) || (thisPlatformOnly && build.platform!=platform()))continue;
                 auto s=judge("plugin",build.signatures);s.name=plugin.name;s.version=plugin.version;s.platform=build.platform;
                 const auto what=plugin.name+" "+plugin.version+" ("+build.platform+")";
-                if(s.status=="revoked"){revoked.insert(build.path);out.notes.push_back(what+" is signed by a revoked key ("+s.key+"); it was not installed");}
+                if(s.status=="revoked"){revoked.insert({plugin.id,build.path});out.notes.push_back(what+" is signed by a revoked key ("+s.key+"); it was not installed");}
                 else if(s.status!="trusted")unknown+=(unknown.empty()?"":", ")+what+(s.status=="unsigned"?" unsigned":" by an unknown key "+s.key);
                 out.code.push_back(s);
             }
@@ -1963,7 +1963,10 @@ Control::Installed Session::installUnpacked(const Package& p,const fs::path& int
                     if(bundleDigest(at->second)!=build.sha256)out.notes.push_back("a different "+build.platform+" build of "+plugin.name+" "+plugin.version+" is already installed; it was kept");
                     continue;
                 }
-                if(!revoked.count(build.path))storeBuild(plugin.format,plugin.id,plugin.version,plugin.name,build.platform,into/build.path,build.signatures,true);
+                if(revoked.count({plugin.id,build.path}))continue;
+                // A bundle that holds several plugins is copied for each but the last, which takes it.
+                const bool later=std::any_of(p.plugins.begin(),p.plugins.end(),[&](const auto& q){return &q>&plugin && std::any_of(q.builds.begin(),q.builds.end(),[&](const auto& b){return b.path==build.path;});});
+                storeBuild(plugin.format,plugin.id,plugin.version,plugin.name,build.platform,into/build.path,build.signatures,!later);
             }
         }
         if(asLibrary){

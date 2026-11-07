@@ -29,6 +29,15 @@ You need `oscairn-sign`, built with Oscairn (`cmake --build build --target oscai
    oscairn-sign verify com.example.organ-2.1.0.olib
    ```
 
+   A bundle holding several plugins is signed for each of them at once and packed once, each
+   plugin named with `--plugin` (a preset-discovery provider in it is not listed or signed):
+
+   ```sh
+   oscairn-sign build ~/oscairn/publisher.key clap com.example.organ,com.example.leslie 2.1.0 linux-arm64 Organ.clap
+   oscairn-sign plugin-package --key ~/oscairn/publisher.key --plugin com.example.organ "Example Organ" \
+       --plugin com.example.leslie "Example Leslie" com.example.organ-2.1.0.olib clap com.example.organ 2.1.0 "Example Organ" linux-arm64=Organ.clap
+   ```
+
 3. **Open a pull request** adding:
 
    - on your first submission, `publishers/<your publisher ID>.json` ([below](#publishers)), and

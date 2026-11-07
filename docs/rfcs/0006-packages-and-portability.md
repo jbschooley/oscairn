@@ -37,7 +37,10 @@ Checked when built and tested; the sections below say how.
       `desktop-gaps`; plugin packages, archives of kind `plugin` carrying plugin builds and no
       items, packed by `oscairn-sign plugin-package`, installed into the store under the same
       rules and listed under Plugins in the install dialog, 2026-11-06, `control-package`,
-      `control-archives`, `desktop-gaps`. Not yet: re-judging store builds
+      `control-archives`, `desktop-gaps`; a bundle holding several plugins packed once, each
+      plugin listed and signed, all installed into the store, preset-discovery providers neither
+      listed nor signed, 2026-11-07, `control-archives`, `control-package`,
+      `package-repository-index`. Not yet: re-judging store builds
       when a key is revoked, revocations through system updates, a product profile refusing
       unsigned code, apps (not packaged yet), trusting a key from the install prompt, repositories
       requiring signatures, pairing)

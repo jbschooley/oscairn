@@ -38,8 +38,8 @@ the export says which.
 
 A plugin package carries plugins without Sounds or Performances: `kind` is `plugin`, `items`
 is empty and `plugins` lists at least one plugin, each with its builds as in any archive, under
-the same signature rules. Its ID and name are the package's; `oscairn-sign plugin-package`
-names it after its plugin:
+the same signature rules. Its ID and name are the package's, given to `oscairn-sign
+plugin-package`:
 
 ```sh
 oscairn-sign plugin-package --key author.key Organ.olib clap com.example.organ 2.1.0 "Example Organ" \
@@ -50,6 +50,29 @@ It packs each build with the signatures in `<build>.sig` beside it, refusing one
 over that build, and with `--key` signs the whole archive. Installing one puts every build of
 each of its plugins into the [plugin store](#the-plugin-store), whether or not anything uses
 them yet, and adds no items: there is no choice of a locked library or the user's own storage.
+
+**A bundle holding several plugins** (Oscairn's Splitters: Split and Join in
+`oscairn-splitters.clap`) goes in once, at its first plugin's path, and every plugin it holds
+is listed in `plugins` with a build at that same path, each with its own signatures. A
+manifest listing one plugin (the same format, ID and version) twice is refused. Each plugin is
+named with `--plugin <id> <name>`, and the bundle is signed for all of them at once
+(`oscairn-sign build` takes the IDs comma-separated, and replaces that key's earlier signatures
+in the `.sig`, so signing them one at a time would keep only the last):
+
+```sh
+oscairn-sign build author.key clap org.oscairn.split,org.oscairn.join 0.1.0 macos-arm64 oscairn-splitters.clap
+oscairn-sign plugin-package --key author.key --plugin org.oscairn.split "Oscairn Split" \
+    --plugin org.oscairn.join "Oscairn Join" Splitters.olib clap org.oscairn.splitters 0.1.0 \
+    "Oscairn Splitters" macos-arm64=oscairn-splitters.clap
+```
+
+Installing it puts the bundle into the store under each plugin's own folder, so `plugins.list`
+shows each and each can be removed alone. **Preset-discovery providers are not plugins:** a
+provider in the bundle (setBfree's `org.oscairn.setbfree.programs` beside its organ and Leslie)
+is neither listed nor signed. Each plugin's signature is over the bundle's digest, which covers
+every byte of the provider too, and the host finds the provider by scanning the installed
+bundle. A signature in `<build>.sig` over an ID that is not packed, such as a provider's, is
+refused like one over another build.
 
 Apps are to be packaged the same way ([RFC 0022](rfcs/0022-apps-and-requests.md) step 2): a
 kind of their own, `app`, with an `apps` list beside `plugins`, each app signed as

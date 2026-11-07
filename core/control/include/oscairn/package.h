@@ -78,6 +78,7 @@ namespace oscairn
     // not a plain folder name (1 to 64 letters, digits, `.`, `-` and `_`, starting with a letter
     // or digit and not ending in `.`), or whose items or builds are
     // not in the archive, not for a knownPlatform, or whose build is not a .clap or .lv2 bundle,
+    // a plugin listed twice (several plugins may list one bundle's path: a bundle holding them all),
     // and a signature that does not verify (each
     // build's over its listed digest, library.sig over the manifest, each item's over its content
     // hash). On refusal `into` is removed. With `into` empty, nothing is extracted: the same

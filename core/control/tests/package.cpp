@@ -167,6 +167,13 @@ int main()
             writePackage(root / "Plugin.olib", plugin, onlyPlugin);
             const auto got = readPackage(root / "Plugin.olib", root / "plugin-out");
             check(got.kind == "plugin" && got.items.empty() && got.plugins.size() == 1 && fs::exists(root / "plugin-out" / build / "Contents/binary"), "a plugin package round-trips");
+            // One bundle holding two plugins: both list it; the same plugin twice is refused.
+            plugin.plugins.push_back({"clap", "synth.two", "1", "Synth Two", {{platform(), build, bundleDigest(onlyPlugin / build)}}});
+            writePackage(root / "Two.olib", plugin, onlyPlugin);
+            check(readPackage(root / "Two.olib", root / "two-out").plugins.size() == 2, "two plugins share one bundle");
+            plugin.plugins[1].id = "synth";
+            writePackage(root / "Twice.olib", plugin, onlyPlugin);
+            check(refused(root / "Twice.olib", root / "twice-out", "a plugin listed twice"), "a plugin listed twice is refused");
             auto pluginKind = [&](std::string m) { return m.replace(m.find("\"kind\":\"library\""), 16, "\"kind\":\"plugin\""); };
             refuse("a plugin package with items", {{"library.json", pluginKind(withBuild(bundleDigest(staged / build)))}, sound, {binary, "code"}});
             refuse("a plugin package with no plugins", {{"library.json", R"({"format":"oscairn.library","version":3,"id":"abc","name":"Pack","kind":"plugin","items":[],"plugins":[],"files":{}})"}});

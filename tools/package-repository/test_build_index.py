@@ -219,6 +219,29 @@ def main(tool):
         (repo / "publishers" / "io.github.json").unlink()
         (aliceDir / "2.0.0.json").unlink()
         check(build(temp / "whole").returncode == 0, "and the tree builds again once the newcomer is gone")
+
+        # One bundle holding two plugins, packed by oscairn-sign: each plugin's build is signed by
+        # the publisher, and the bundle counts once in the platform's size.
+        duo = temp / "Duo.clap"
+        duo.write_bytes(b"two plugins in one bundle")
+        out = run(tool, "build", keys / "publisher.key", "clap", "com.example.duo.a,com.example.duo.b", "1.0.0", "linux-arm64", duo)
+        check(out.returncode == 0 and len(out.stdout.splitlines()) == 2, "oscairn-sign signs a bundle for each of its plugins: " + out.stderr.strip())
+        duo_dir = repo / "packages" / "com.example.duo"
+        duo_dir.mkdir()
+        out = run(tool, "plugin-package", "--key", keys / "publisher.key", "--plugin", "com.example.duo.a", "Duo A", "--plugin", "com.example.duo.b", "Duo B",
+                  duo_dir / "1.0.0.olib", "clap", "com.example.duo", "1.0.0", "Example Duo", f"linux-arm64={duo}")
+        check(out.returncode == 0, "and packs it once: " + out.stderr.strip())
+        duo_data = (duo_dir / "1.0.0.olib").read_bytes()
+        (duo_dir / "1.0.0.json").write_text(json.dumps(dict(release, id="com.example.duo", release="1.0.0",
+            archive={"path": "1.0.0.olib", "sha256": hashlib.sha256(duo_data).hexdigest(), "size": len(duo_data)})))
+        out = build(temp / "duo")
+        check(out.returncode == 0, "a package with two plugins in one bundle builds: " + out.stderr.strip())
+        if out.returncode == 0:
+            duo_root = json.loads((temp / "duo" / "repository.json").read_text())
+            duo_index = json.loads(gzip.decompress((temp / "duo" / duo_root["index"]["path"]).read_bytes()))
+            duo_version = next(p for p in duo_index["packages"] if p["id"] == "com.example.duo")["versions"][0]
+            check(duo_version["types"] == {"clap": 2} and duo_version["platforms"]["linux-arm64"]["installed"] == len(b"two plugins in one bundle"),
+                  "both plugins listed, the bundle counted once: " + json.dumps(duo_version["platforms"]))
     finally:
         shutil.rmtree(temp, ignore_errors=True)
     return 1 if failures else 0

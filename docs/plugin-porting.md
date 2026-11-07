@@ -625,6 +625,9 @@ What changes for the plugin:
   To ship the plugin alone, `oscairn-sign plugin-package --key author.key MyPlugin.olib clap
   <id> <version> <name> <platform>=MyPlugin.clap...` packs your signed builds into a
   [plugin package](library-archive.md#plugin-packages), which installs them into the store.
+  A bundle holding several plugins is signed for all of them at once (`oscairn-sign build`
+  takes the IDs comma-separated) and packed once, each plugin named with `--plugin <id>
+  <name>`; a preset-discovery provider in it is not a plugin and is neither listed nor signed.
   To publish to Oscairn's package repository, sign the archive too and follow
   [Publishing a package](developer-guide.md#publishing-a-package).
 - **Installing code:** a device installs a build signed by a key its trust store trusts for

@@ -260,7 +260,9 @@ of the SHA-256 of the public key) and public key. `build` adds this key's signat
 `MySynth.clap.sig` beside the build, over its format, ID, version, platform and digest;
 re-sign after every rebuild. `plugin-package` packs builds and their `.sig` files into a
 [plugin package](library-archive.md#plugin-packages), an archive with no Sounds or
-Performances, signed whole with `--key`. `archive` signs an archive whole; `verify` checks every signature
+Performances, signed whole with `--key`; a bundle holding several plugins is signed for all of
+them at once (`build` takes the IDs comma-separated) and packed once, each plugin named with
+`--plugin <id> <name>`. `archive` signs an archive whole; `verify` checks every signature
 and hash in one and says who signed what (`--into <folder>` picks where it unpacks to check,
 on the file system with room for it). The app's own keys, for signing exports, are
 `Keys/<name>.key` in the data folder (`keys.make`, `keys.list`); the keys a device trusts, and
