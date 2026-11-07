@@ -587,6 +587,37 @@ namespace
         try { s.recordDelete(take); } catch(const std::invalid_argument&) { refused = true; }
         check(refused, "a take deleted is no longer found");
     }
+
+    // RFC 0035: with the time unknown, a take's folder is named by a take number the device never
+    // gives twice, not by the clock; with it known, by the clock as before.
+    void unknownTime(const char* synth)
+    {
+        setenv("OSCAIRN_TIME", "unknown", 1);
+        Session s(48000, 128);
+        const auto node = s.add("synth", synth);
+        const auto part = s.addPart("Lead");
+        s.insertIntoPart(part, 0, node);
+        s.commit();
+        auto take = [&](const std::string& name) { const auto t = s.recordStart({}, name); return finish(s, t); };
+        auto folder = [](const Control::Take& t) { return fs::path(t.folder).filename().string(); };
+        const auto first = take("Song");
+        check(folder(first) == "Take 0001 Song", "the first take with the time unknown is take 1: " + folder(first));
+        fs::create_directories(fs::path(std::getenv("OSCAIRN_DATA_HOME")) / "recordings" / "Take 0002 Song"); // one copied in
+        const auto second = take("Song");
+        check(folder(second) == "Take 0002 Song 2", "the next is take 2, beside the folder already there: " + folder(second));
+        s.recordRename(first.take, "Best");
+        bool renamed = false;
+        for(const auto& t : s.recordTakes()) renamed = renamed || folder(t) == "Take 0001 Best";
+        check(renamed, "renamed, it keeps its take number");
+        Session again(48000, 128);
+        const auto third = again.recordStart({}, "Song");
+        const auto after = finish(again, third);
+        check(folder(after) == "Take 0003 Song", "a restarted engine goes on counting: " + folder(after));
+        setenv("OSCAIRN_TIME", "known", 1);
+        const auto dated = folder(take("Dated"));
+        check(dated.size() == 19 + 6 && dated[4] == '-' && dated[10] == ' ' && dated.ends_with(" Dated"), "with the time known, the clock names it: " + dated);
+        unsetenv("OSCAIRN_TIME");
+    }
 }
 
 int main(int argc, char** argv)
@@ -610,6 +641,7 @@ int main(int argc, char** argv)
         retroactive(argv[1]);
         bars(argv[1]);
         earlierTakes();
+        unknownTime(argv[1]);
     }
     catch(const std::exception& e) { std::fprintf(stderr, "FAIL: %s\n", e.what()); ++failures; }
     fs::remove_all(home);

@@ -47,6 +47,10 @@ namespace oscairn
     // The platform's folder for Oscairn's user data: OSCAIRN_DATA_HOME, else Application Support
     // on macOS, else XDG_DATA_HOME or ~/.local/share.
     std::filesystem::path dataHome();
+    // Whether the wall clock is known to be right (RFC 0035's time state): OSCAIRN_TIME says
+    // "known" or "unknown" where a supervisor keeps the state; otherwise the clock is trusted, as
+    // on a desktop, unless it reads before the floor.
+    bool timeKnown();
     // "#rrggbb" in hex digits, or empty: a Performance's color.
     bool validColor(const std::string& color);
     // A Sound's or Performance's content hash: SHA-256 over its document without the info block,

@@ -892,7 +892,10 @@ because a disconnected request is not cancellation. The app runs them on its con
 [RFC 0020](rfcs/0020-recording.md) steps 1 to 3 and step 4's control API. The engine records taps into a take: one
 file per tap, all starting and ending on the same sample, in a folder of its own under the
 data folder's `recordings/` (`OSCAIRN_DATA_HOME/recordings`, beside `assets`), named by its
-local start time and the Performance or the given name: `2026-11-01 21-04-17 Open Road/`.
+local start time and the Performance or the given name: `2026-11-01 21-04-17 Open Road/`. When
+the time is not known ([RFC 0035](rfcs/0035-system-base.md#time): `OSCAIRN_TIME=unknown`, or a
+clock reading before 2026-11-01), by a take number the device never gives twice instead:
+`Take 0142 Open Road/`. A rename keeps the time or the number first.
 
 - `record.start` takes optional `taps` and `name`, and returns `{take}`. Each tap is
   `{kind}` with:

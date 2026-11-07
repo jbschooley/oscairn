@@ -437,8 +437,17 @@ updates ([systemd](https://www.freedesktop.org/software/systemd/man/latest/syste
 ### Where things stand in the code
 
 - A recording's folder is named by `std::chrono::system_clock` in local time
-  (`Session::recordStart`, `core/control/src/session.cpp`), whatever the clock says: on a device
-  with no time it would be named 1970 or wherever the clock started.
+  (`Session::recordStart`, `core/control/src/session.cpp`) when `timeKnown()`
+  (`core/control/src/library.cpp`) says the time is known, and otherwise `Take 0142 Open Road/`,
+  by a take number kept in the data folder's `take-number` and never given twice; a folder
+  already there gets ` 2` added, and a rename keeps the number. `timeKnown()` is the smallest
+  start on the time state: `OSCAIRN_TIME` (`known` or `unknown`) where a supervisor sets it,
+  otherwise known unless the clock reads before a floor, which is a fixed date in the code
+  (2026-11-01), so a desktop's clock is trusted. Still to build: the time state itself and
+  `system.time`, the floor from the image's build time and the saved time, `OSCAIRN_TIME` set by
+  the image, a take renamed to its date once the time is resolved in the same boot, the
+  boot-relative start in `take.json`, and empty `bext` dates once takes have a `bext` chunk (RFC
+  0020 step 1 has not built it). Dated and numbered folders sort apart in `record.takes`.
 - Parameter-info revisions are seeded from the wall clock so "a new engine's revisions never match
   those a client still holds" (`core/control/include/oscairn/session.h`). If the clock is stepped
   back (a correction from the network), a restarted engine could repeat an earlier engine's

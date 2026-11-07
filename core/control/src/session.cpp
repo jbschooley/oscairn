@@ -732,12 +732,24 @@ namespace oscairn
         const auto taps = asked.empty() ? defaultTaps() : asked;
         if( !retroTaps_.empty() ) recorder_.updateRetro( compileTaps( retroTaps_, false ) ); // as current as the take's, so a tap they hold is found
         auto compiled = compileTaps( taps, true );
-        // A folder per take, named by its local start time and the Performance (RFC 0020).
-        const auto now = std::chrono::system_clock::to_time_t( std::chrono::system_clock::now() );
-        std::tm local{};
-        localtime_r( &now, &local );
+        // A folder per take, named by its local start time and the Performance (RFC 0020); with the
+        // time unknown, by a take number this device never gives twice (RFC 0035).
         char stamp[32];
-        std::strftime( stamp, sizeof stamp, "%Y-%m-%d %H-%M-%S", &local );
+        if( timeKnown() )
+        {
+            const auto now = std::chrono::system_clock::to_time_t( std::chrono::system_clock::now() );
+            std::tm local{};
+            localtime_r( &now, &local );
+            std::strftime( stamp, sizeof stamp, "%Y-%m-%d %H-%M-%S", &local );
+        }
+        else
+        {
+            const auto counter = dataHome() / "take-number";
+            uint64_t last = 0;
+            std::ifstream( counter ) >> last;
+            writeAtomically( counter, std::to_string( ++last ) + "\n" );
+            std::snprintf( stamp, sizeof stamp, "Take %04llu", static_cast<unsigned long long>( last ) );
+        }
         std::string title = name.empty() ? info_.name : name;
         for( auto& c : title ) if( static_cast<unsigned char>( c ) < 0x20 || std::strchr( "<>:\"/\\|?*", c ) ) c = '_';
         const auto base = dataHome() / "recordings" / ( title.empty() ? std::string( stamp ) : std::string( stamp ) + " " + title );
@@ -864,11 +876,14 @@ namespace oscairn
         while( !title.empty() && ( title.back() == ' ' || title.back() == '.' ) ) title.pop_back();
         while( !title.empty() && title.front() == ' ' ) title.erase( 0, 1 );
         if( title.empty() ) throw std::invalid_argument( "a take's name cannot be empty" );
-        // The time it was recorded stays first: the name follows it.
+        // The time it was recorded, or its take number, stays first: the name follows it.
         const fs::path from = t.folder;
         const auto old = from.filename().string();
         const bool stamped = old.size() >= 19 && old[4] == '-' && old[10] == ' ' && std::all_of( old.begin(), old.begin() + 19, []( char c ) { return std::isdigit( static_cast<unsigned char>( c ) ) || c == '-' || c == ' '; } );
-        const auto base = from.parent_path() / ( stamped ? old.substr( 0, 19 ) + " " + title : title );
+        size_t numbered = old.starts_with( "Take " ) ? 5 : 0;
+        while( numbered && numbered < old.size() && std::isdigit( static_cast<unsigned char>( old[numbered] ) ) ) ++numbered;
+        if( numbered < 9 || ( numbered < old.size() && old[numbered] != ' ' ) ) numbered = 0;
+        const auto base = from.parent_path() / ( stamped ? old.substr( 0, 19 ) + " " + title : numbered ? old.substr( 0, numbered ) + " " + title : title );
         auto to = base;
         for( int n = 2; fs::exists( to ) && to != from; ++n ) to = base.string() + " " + std::to_string( n );
         if( to == from ) return;

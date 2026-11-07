@@ -103,6 +103,14 @@ namespace oscairn
 #endif
     }
 
+    bool timeKnown()
+    {
+        if(const char* state = std::getenv("OSCAIRN_TIME"); state && *state) return std::string_view(state) == "known";
+        // shortcut: the floor is this code's date (2026-11-01 UTC), not the image's build time and the
+        // time last saved; the supervisor gives both once built (RFC 0035 step 6).
+        return std::chrono::system_clock::now() >= std::chrono::system_clock::from_time_t(1793491200);
+    }
+
     bool validColor(const std::string& c)
     {
         return c.empty() || (c.size() == 7 && c[0] == '#' && std::all_of(c.begin() + 1, c.end(), [](char x) { return std::isxdigit(static_cast<unsigned char>(x)) != 0; }));
