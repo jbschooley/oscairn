@@ -43,3 +43,8 @@ tests it, with a note on what remains of a step that is partly done. The
 | [0032](0032-arpeggiator.md) | The arpeggiator | proposed |
 | [0033](0033-script-block.md) | The script block | proposed |
 | [0034](0034-parallel-graph-rendering.md) | Parallel graph rendering | proposed |
+| [0035](0035-system-base.md) | The system base: real-time tuning, security, licenses, the SDK, time and services | proposed |
+| [0036](0036-bluetooth.md) | Bluetooth MIDI and audio | proposed |
+| [0037](0037-storage-and-file-transfer.md) | Storage and file transfer | proposed |
+| [0038](0038-diagnostics-backup-and-reset.md) | Diagnostics, backup and reset | proposed |
+| [0039](0039-network-security.md) | Network security | proposed |

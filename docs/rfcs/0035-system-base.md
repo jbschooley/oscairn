@@ -11,7 +11,7 @@ device profiles ([RFC 0024](0024-device-profiles.md)), resource budgets
 ([RFC 0028](0028-system-image-updates-boot-and-power.md)), the shell
 ([RFC 0030](0030-system-shell-launcher-and-navigation.md)), and packages and signatures
 ([RFC 0006](0006-packages-and-portability.md), [RFC 0031](0031-package-repository-and-distribution.md)).
-Bluetooth is RFC 0036, which applies this RFC's rule for
+Bluetooth is [RFC 0036](0036-bluetooth.md), which applies this RFC's rule for
 [optional hardware](#optional-hardware-built-per-product) to it.
 
 Oscairn is becoming a Linux distribution built around instruments. The RFCs above say what runs
@@ -602,7 +602,7 @@ None of the subsystems below has Oscairn code yet, so the rule applies as each i
   `oscairn` package with each option off, and checks the installed files and their dynamic
   dependencies (`readelf -d`) for the feature's libraries and the binaries for its symbols.
 
-RFC 0036 applies this to Bluetooth (MIDI and audio).
+[RFC 0036](0036-bluetooth.md) applies this to Bluetooth (MIDI and audio).
 
 ## Build order and gates
 
