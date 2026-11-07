@@ -661,11 +661,13 @@ namespace oscairn
         std::map<NodeId,uint64_t> outputDrops_;
         std::map<NodeId,uint64_t> parameterRevisions_; // each plugin's parameter info as last seen
         // Each node's parameter info as graphState() gave it: its plugin, that plugin's info revision,
-        // and the revision clients were given. The count starts from the clock, so a new engine's
-        // revisions never match those a client still holds from an earlier one.
+        // and the revision clients were given. The count goes on past the revisions earlier engines
+        // reserved in the data folder (or from the clock, if later), so a new engine's revisions
+        // never match those a client still holds from an earlier one, whatever the clock says.
         struct InfoRevision { std::weak_ptr<PluginHost> host; uint64_t seen = 0, revision = 0; };
         mutable std::map<NodeId,InfoRevision> infoRevisions_;
-        mutable uint64_t infoRevision_ = uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+        mutable uint64_t infoRevision_ = 0, infoReserved_ = 0;
+        uint64_t nextInfoRevision() const;
         Transport transport_; // audio thread after construction
         // Recording (RFC 0020): the taps asked for, compiled again when the wires change.
         Recorder recorder_;

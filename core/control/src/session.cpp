@@ -313,7 +313,7 @@ namespace oscairn
         {
             const auto host = graph_.node(n.id).host; auto& known = infoRevisions_[n.id];
             if(known.host.owner_before(host) || host.owner_before(known.host) || known.seen != host->parameterRevision())
-                known = {host, host->parameterRevision(), ++infoRevision_};
+                known = {host, host->parameterRevision(), nextInfoRevision()};
             revisions[n.id] = known.revision;
         }
         std::erase_if(infoRevisions_, [&](const auto& k) { return !revisions.count(k.first); });
@@ -321,6 +321,24 @@ namespace oscairn
         for(const auto& n : topology.nodes)
             if(const auto* c = dynamic_cast<const SoundContext*>(&graph_.host(n.id))) shared[n.id] = {graph_.effectSource(n.id, leaving_), c->channel(), c->bus()};
         return {topology,nodes_,revision_,staged_,parts_,wires_,scenes_,untouched_,scene_,macros_,disabled_,ringing,masterLevel_,masterPan_,roles_,std::move(revisions),std::move(shared)};
+    }
+
+    // Revisions are given only up to a reservation kept in the data folder, so the next engine
+    // starts past every one this one gave, even if the clock has gone back since.
+    uint64_t Session::nextInfoRevision() const
+    {
+        if(infoRevision_ >= infoReserved_)
+        {
+            const auto file = dataHome() / "parameter-revision";
+            uint64_t saved = 0;
+            std::ifstream(file) >> saved;
+            const auto clock = uint64_t(std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch()).count());
+            infoRevision_ = std::max({infoRevision_, saved, clock});
+            infoReserved_ = infoRevision_ + (uint64_t(1) << 24);
+            try { writeAtomically(file, std::to_string(infoReserved_) + "\n"); }
+            catch(const std::exception& e) { std::fprintf(stderr, "oscairn: parameter revisions counted from the clock alone: %s\n", e.what()); }
+        }
+        return ++infoRevision_;
     }
 
     void Session::saveState(NodeId node,const std::string& directory)

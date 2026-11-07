@@ -448,10 +448,12 @@ updates ([systemd](https://www.freedesktop.org/software/systemd/man/latest/syste
   the image, a take renamed to its date once the time is resolved in the same boot, the
   boot-relative start in `take.json`, and empty `bext` dates once takes have a `bext` chunk (RFC
   0020 step 1 has not built it). Dated and numbered folders sort apart in `record.takes`.
-- Parameter-info revisions are seeded from the wall clock so "a new engine's revisions never match
-  those a client still holds" (`core/control/include/oscairn/session.h`). If the clock is stepped
-  back (a correction from the network), a restarted engine could repeat an earlier engine's
-  revisions within one boot. A random seed or the boot ID would not depend on the clock.
+- Parameter-info revisions (`graph.get`'s `parameterRevision`) never repeat across restarts, so
+  "a new engine's revisions never match those a client still holds"
+  (`core/control/include/oscairn/session.h`): an engine gives them only up to a reservation it
+  keeps in the data folder's `parameter-revision`, and the next starts past it, or from the
+  wall clock in microseconds if that is later. A clock stepped back no longer repeats them. It
+  was the only counter seeded from the clock.
 - Library recents are an ordered list, not times (`core/control/src/library.cpp`), and RFC 0006
   already rules out timestamps for sync ("Do not use timestamps as last-writer-wins"). Both are
   already independent of the clock.

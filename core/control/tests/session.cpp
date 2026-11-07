@@ -8,10 +8,14 @@
 #include <atomic>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
 #include <limits>
 #include <stdexcept>
 #include <thread>
 #include <vector>
+#include <unistd.h>
 
 namespace
 {
@@ -327,6 +331,30 @@ namespace
         audioThread.join();
         check( ok && blocks > 0, "concurrent control and rendering remain valid" );
     }
+
+    // Parameter-info revisions go on past those an earlier engine reserved, whatever the clock says.
+    void revisionsNeverRepeat( const char* synth )
+    {
+        const auto home = std::filesystem::temp_directory_path() / ( "oscairn-session-revisions-" + std::to_string( getpid() ) );
+        std::filesystem::create_directories( home );
+        setenv( "OSCAIRN_DATA_HOME", home.c_str(), 1 );
+        const uint64_t ahead = uint64_t( 1 ) << 52; // the clock's microseconds reach it in 2112: as if the clock went back since
+        std::ofstream( home / "parameter-revision" ) << ahead << "\n";
+        uint64_t first = 0;
+        {
+            oscairn::Session session( rate, block );
+            const auto id = instrument( session, synth );
+            first = session.graphState().parameterRevisions.at( id );
+            check( first > ahead, "a new engine's parameter revisions start past those reserved before, not from the clock" );
+        }
+        {
+            oscairn::Session session( rate, block );
+            const auto id = instrument( session, synth );
+            check( session.graphState().parameterRevisions.at( id ) > first, "and the next engine's past the last one's" );
+        }
+        unsetenv( "OSCAIRN_DATA_HOME" );
+        std::filesystem::remove_all( home );
+    }
 }
 
 int main( int argc, char** argv )
@@ -337,6 +365,7 @@ int main( int argc, char** argv )
     midiClock();
     clockOut();
     concurrentControl( argv[2] );
+    revisionsNeverRepeat( argv[2] );
     if( failures == 0 ) std::puts( "ok: control/session audio equivalence, pressure, clock in and out, validation, overflow and concurrent rendering" );
     return failures ? 1 : 0;
 }

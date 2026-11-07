@@ -81,6 +81,7 @@ What is built, as of 2026-11-07:
   | `assets/` | The asset registry `libraries.tsv`, `index/<id>.tsv` per library, and the `user` library of imported samples | Imports, registrations |
   | `Plugins/<format>/<id>@<version>/<platform>/` | The plugin store | Installs, `plugins.addBuild` |
   | `recordings/` | Takes, and the MIDI journal (planned) | The recorder |
+  | `parameter-revision` | The highest parameter-info revision an engine may give, so the next starts past it (RFC 0035) | The engine, when its first graph read gives one and every 2^24 revisions after |
   | `take-number` | The last take number given to a take recorded with the time unknown (RFC 0035) | The recorder, for each such take |
   | `Keys/`, `trust.json` | Signing keys (private keys readable by the user only) and the trust store | Settings |
   | `Repositories/`, `repositories.json` | Package indexes kept per repository, and roots' serials seen | Package fetches |
