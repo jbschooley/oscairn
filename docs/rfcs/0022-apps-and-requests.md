@@ -279,7 +279,8 @@ An app is a kind of package ([RFC 0006](0006-packages-and-portability.md), [RFC 
   items are the musician's and stay; its data folder stays unless **Remove its data too** is
   chosen.
 - **Its data folder:** `OSCAIRN_DATA_HOME/AppData/<id>/`, apart from the install, kept across
-  versions, on the user data partition on a device (RFC 0028), and in backups. Logs under it.
+  versions, on the user data partition on a device (RFC 0028), and in backups. Its logs are not
+  here but in `Logs/apps/<id>.log`, which the shell writes (above; [RFC 0038](0038-diagnostics-backup-and-reset.md)).
 
 ### The built-in apps
 
