@@ -221,9 +221,13 @@ third-party GUI), in a process that runs headless. So:
   it before the plugin, so whatever removes the host (removing the node, replacing its plugin,
   loading another Performance) closes it; the person closing it destroys the plugin's editor;
   a worker restarted after a crash opens it again, as its engine last asked.
-- **Linux: X11 can embed across processes** (XEmbed), so on the device's single screen a
-  worker's window could go inside the app later. Until then, on Linux and Windows only plugins
-  that float their own window show one.
+- **Linux: the device's Wayland shell** ([RFC 0022](0022-apps-and-requests.md#what-an-app-is),
+  decided 2026-11-07) gives a worker showing a plugin's own window a surface of its own, as it
+  gives apps: natively for plugins that speak Wayland (`CLAP_WINDOW_API_WAYLAND`), and through an
+  X server of the worker's own for X11 plugins. Until it is built, on Linux and Windows only
+  plugins that float their own window show one. A plugin's own window adds to its generated
+  pages and declared widgets, never replacing them: the device's knobs and encoders always reach
+  its parameters.
 
 ## Toolkit
 

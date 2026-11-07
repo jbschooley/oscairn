@@ -434,7 +434,12 @@ Decided by the owner, 2026-11-07:
 - **A ported DAW's audio:** an audio node in the engine's graph, the DAW keeping its own engine and
   plugins (the recommendation). Still open below: whether a DAW's own plugins may run on a device.
 - **The device's display:** the Wayland shell comes first. Third-party apps on devices wait for it,
-  rather than running in the meantime as signed-only.
+  rather than running in the meantime as signed-only. It covers **plugin windows from workers as
+  well as apps** (2026-11-07): a worker showing a plugin's own GUI (CLAP's GUI extension) gets a
+  surface from the shell as an app does, natively where the plugin speaks Wayland and through an X
+  server of the worker's own for X11 plugins (JUCE's on Linux), so a plugin's own interface (a
+  skeuomorphic one, or an AWM2-style element editor) is shown on devices too, contained in its
+  worker ([RFC 0019](0019-adaptive-ui.md#plugin-windows)).
 - **Platforms:** no platform is an absolute requirement for an app. Building for every platform
   is encouraged, and Oscairn should make CI for that easy to set up (a template, as the package
   repository's is). First-party apps keep RFC 0006's requirement of macOS and Linux ARM64.
