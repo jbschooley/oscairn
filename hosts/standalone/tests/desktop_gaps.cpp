@@ -22,6 +22,7 @@
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <atomic>
 #include <chrono>
+#include <csignal>
 #include <cstdio>
 #include <filesystem>
 #include <functional>
@@ -79,7 +80,14 @@ namespace
         {
             sockaddr_un a{}; a.sun_family = AF_UNIX; std::snprintf(a.sun_path, sizeof a.sun_path, "%s", path.c_str()); return a;
         }
-        static void quiet(int fd) { int yes = 1; ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof yes); }
+        static void quiet([[maybe_unused]] int fd)
+        {
+#ifdef SO_NOSIGPIPE
+            int yes = 1; ::setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &yes, sizeof yes);
+#else // Linux has no per-socket option
+            std::signal(SIGPIPE, SIG_IGN);
+#endif
+        }
         static bool writeAll(int to, const std::string& bytes)
         {
             for(size_t done = 0; done < bytes.size();) { const auto w = ::write(to, bytes.data() + done, bytes.size() - done); if(w <= 0) return false; done += size_t(w); }
