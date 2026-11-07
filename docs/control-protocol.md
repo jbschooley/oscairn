@@ -1134,10 +1134,17 @@ or a plugin package (`kind` `plugin`: plugin builds and no items).
 - `packages.list` takes `{source}` and `packages.install` takes `{source,id}` and optional
   `version` and `acceptUnsignedCode`; each returns `{job}` at once and goes on in the engine,
   off its control thread ([RFC 0031](rfcs/0031-package-repository-and-distribution.md)).
-  `source` is a folder holding a package repository: `repository.json`, `repository.sig`,
-  `index/` and the package files under `blobs/<first two hex digits>/<sha256>`, as the
+  `source` is a folder holding a package repository, or its `https://` (or `http://`) address:
+  `repository.json`, `repository.sig`, `index/` and the package files under
+  `blobs/<first two hex digits>/<sha256>`, as the
   [index builder](../tools/package-repository/template/README.md) and a static host lay them
-  out. Its root key must be in the trust store for `repositories`; the root key's signature
+  out. From the web, the index this device read last from a repository is kept in the data
+  folder's `Repositories/` and used again while the root's `serial` is unchanged, or brought up
+  to date by the delta the root names from its serial; package files come from the root's
+  `mirrors` in turn, then its `blobBase`, then the address itself, each checked by its SHA-256,
+  the next tried when one does not verify, and a download cut short is resumed by the next
+  install with a range request. On macOS this is the system's HTTPS; on Linux this build
+  fetches `http://` only. Its root key must be in the trust store for `repositories`; the root key's signature
   over the index key, the index key's over the root, the index's and the package file's
   SHA-256 and size, and every signature in the archive are checked, and a root with a lower
   `serial` than one this device has seen (kept in `repositories.json` in the data folder) is

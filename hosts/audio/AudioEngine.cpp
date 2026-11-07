@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "AudioEngine.h"
+#include "WebTransport.h"
 
 #include "oscairn/midi_input.h"
 
@@ -13,6 +14,7 @@ namespace oscairn::host
 {
     AudioEngine::AudioEngine( const std::string& pluginDir, AudioConfiguration audio ) : channelMap_(std::move(audio),maxFrames)
     {
+        useWebTransport(); // package repositories on the web (RFC 0031)
         juce::AudioDeviceManager::AudioDeviceSetup preferred;
         const auto& config=channelMap_.configuration();
         preferred.bufferSize = config.bufferFrames ? int(config.bufferFrames) : OSCAIRN_AUDIO_BUFFER_FRAMES;

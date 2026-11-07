@@ -79,12 +79,27 @@ jobs:
           key: archives-${{ hashFiles('packages/**/*.json') }}
           restore-keys: archives-
 
+      - name: Fetch the root and index published last
+        # For the delta devices fetch instead of the whole index (RFC 0031, "Incremental
+        # updates"). The builder checks them against the index key; when anything is missing
+        # there is simply no delta.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mkdir -p .published/index
+          site=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .html_url 2>/dev/null) || exit 0
+          curl -fsSL "${site%/}/repository.json" -o .published/repository.json || exit 0
+          curl -fsSL "${site%/}/repository.sig" -o .published/repository.sig || exit 0
+          index=$(python3 -c 'import json; print(json.load(open(".published/repository.json"))["index"]["path"])') || exit 0
+          if [[ "$index" =~ ^index/[0-9a-f]{64}\.json\.gz$ ]]; then curl -fsSL "${site%/}/$index" -o ".published/$index" || true; fi
+
       - name: Build the index
         run: >
           python3 -I scripts/build-index.py
           --oscairn-sign "${{ steps.tools.outputs.path }}"
           --cache "$RUNNER_TEMP/cache" --out site
-          --previous .previous
+          --previous .previous --previous-site .published
           --serial "$(git rev-list --count HEAD)"
 
       - name: Sign the root with the index key

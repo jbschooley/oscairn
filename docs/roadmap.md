@@ -616,7 +616,8 @@ Each starts as an RFC:
   device's profile; updates that never move a Performance's lock on their own; revocation and
   takedown; fetching for an offline instrument from a desktop, USB or a paired computer
   (built: installing from a repository folder or USB drive, every signature and hash checked,
-  from the API and the desktop Library; unpacked package folders)
+  from the API and the desktop Library; unpacked package folders; fetching over HTTP(S) with
+  deltas, mirrors and resumed downloads, HTTPS on macOS only for now)
 - [ ] **Keeping plugins loaded:** a memory budget, unloading the least recently used, setlist
   preparation options and a setlist check; CPU, memory and storage meters. Loaded items beyond
   the open Performance are opportunistic memory ([RFC 0025](rfcs/0025-resource-budgets.md#the-order-of-eviction)).

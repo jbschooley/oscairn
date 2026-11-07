@@ -40,6 +40,16 @@ Checked when built and tested; the sections below say how.
       (step 2), a device's list of repositories and `.orepo` files, recording each installed
       package's repository; the free-space refusal and a drive pulled midway are not tested)
 - [ ] 2. Fetching over HTTPS: refresh, incremental index updates, mirrors, resumable downloads
+      (built 2026-11-06: fetching through the host's transport, JUCE's URL streams: the system's
+      HTTPS on macOS, plain HTTP only on Linux, where HTTPS needs a TLS library the image does
+      not have yet (libcurl with OpenSSL or mbedTLS, and `JUCE_USE_CURL`); the index kept per
+      repository and brought up to date by deltas, which the index builder now writes from the
+      root published last (`--previous-site`); blobs from the mirrors, the blob base and the
+      repository's own address in turn, a bad copy refused and the next tried; a download cut
+      short resumed with a range request; `control-repository-web` against a local HTTP server.
+      Not yet: HTTPS on Linux, fetching the root from a mirror when the repository's own address
+      is down, per-platform fetches (releases are still whole archives), the desktop installing
+      from an address)
 - [ ] 3. Publishing: the `oscairn publish` command, checks, immutable versions and yanking
 - [ ] 4. Revocation lists and the takedown process
 - [ ] 5. Discovery: Get more in the Library, the Store app, compatibility filters
@@ -312,7 +322,12 @@ search:
 
 ### Incremental updates
 
-- Each change to the repository makes a new index with a higher **serial**.
+- Each change to the repository makes a new index with a higher **serial**. The index builder
+  writes a delta from the index published last (`--previous-site`, after checking that root's
+  signature): `index/<sha256>.delta.gz`, `{format: "oscairn.repository-delta", version: 1,
+  repository, from, serial, packages, removed}`, named in the root's `deltas` as `{from, path,
+  sha256, size}`. A device keeps the index it read last and applies the one delta from its
+  serial; any other gap fetches the whole index.
 - The root names the full index and the deltas from recent serials to the current one. A
   delta lists the package records that changed, each whole.
 - A device that has serial 1830 fetches the root, then the delta from 1830 if the root lists
@@ -330,7 +345,8 @@ search:
   `oscairn-sign verify-file` checks it.
 - **The root's fields:** `format` (`oscairn.repository`), `version` (1), `repository`, `name`,
   `serial`, `rootKey`, `indexKey` (`{key, signature}`, the root key's signature over it),
-  `index` and `revocations` (each `{path, sha256, size}`), `blobBase` and `mirrors`. Until step
+  `index` and `revocations` (each `{path, sha256, size}`), `deltas` (each `{from, path, sha256,
+  size}`), `blobBase` and `mirrors`. Until step
   1 stores a release in pieces, each version in the index also names its whole archive
   (`archive`, `{sha256, size}`), a blob like any other.
 - Everything else is checked by its hash in the root.

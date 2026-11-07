@@ -9,6 +9,8 @@
 #include <algorithm>
 #include <cctype>
 #include <fstream>
+#include <map>
+#include <mutex>
 #include <stdexcept>
 
 namespace oscairn::repository
@@ -63,12 +65,13 @@ namespace oscairn::repository
                 if(!in.read(bytes.data(), std::streamsize(bytes.size()))) bad(path + " cannot be read");
                 return bytes;
             }
-            void fetch(const std::string& path, uint64_t size, const fs::path& to) override
+            void fetch(const std::string& sha256, uint64_t size, const fs::path& to) override
             {
-                const auto file = local(path);
+                const auto file = local(blobPath(sha256));
                 std::error_code e;
-                if(fs::file_size(file, e) != size || e) bad("the package file is not on this drive, or not the size the index gives: " + path);
-                fs::copy_file(file, to);
+                if(fs::file_size(file, e) != size || e) bad("the package file is not on this drive, or not the size the index gives: " + blobPath(sha256));
+                fs::copy_file(file, to, fs::copy_options::overwrite_existing);
+                if(assets::sha256File(to) != sha256) { fs::remove(to, e); bad("the package file is not the one the index names: " + blobPath(sha256)); }
             }
             fs::path local(const std::string& path) override
             {
@@ -80,6 +83,106 @@ namespace oscairn::repository
         private:
             fs::path root_;
         };
+
+        std::mutex transportMutex;
+        Transport transport; // set by the host; guarded by transportMutex
+        bool webAddress(const std::string& url) { return url.rfind("https://", 0) == 0 || url.rfind("http://", 0) == 0; }
+
+        class Web final : public Source
+        {
+        public:
+            Web(std::string base, const std::atomic<bool>* cancel) : base_(std::move(base)), cancel_(cancel) {}
+            // From the base; an index or delta (named by its hash) from each mirror in turn too.
+            std::string read(const std::string& path, uint64_t maxBytes) override
+            {
+                std::vector<std::string> from{base_ + path};
+                if(path.rfind("index/", 0) == 0) for(const auto& m : mirrors_) from.push_back(m + path);
+                std::string why;
+                for(const auto& url : from)
+                {
+                    std::string bytes;
+                    try
+                    {
+                        bool tooLarge = false;
+                        const auto status = get(url, 0, [&](int answer, const char* data, size_t n) {
+                            if(answer != 200) return false;
+                            if(bytes.size() + n > maxBytes) { tooLarge = true; return false; }
+                            bytes.append(data, n); return true;
+                        });
+                        if(tooLarge) { why = path + " is too large at " + url; continue; }
+                        if(status == 200) return bytes;
+                        why = url + " answered " + std::to_string(status);
+                    }
+                    catch(const std::runtime_error& e) { why = e.what(); }
+                }
+                bad("cannot fetch " + path + ": " + why);
+            }
+            void fetch(const std::string& sha256, uint64_t size, const fs::path& to) override
+            {
+                const auto tail = sha256.substr(0, 2) + "/" + sha256;
+                std::vector<std::string> from;
+                for(const auto& m : mirrors_) from.push_back(m + "blobs/" + tail);
+                if(webAddress(blobBase_)) from.push_back(blobBase_ + tail);
+                from.push_back(base_ + "blobs/" + tail);
+                std::string why;
+                for(const auto& url : from)
+                {
+                    try
+                    {
+                        // Resumed from what is there already: the hash says whether the whole is right.
+                        std::error_code e;
+                        uint64_t have = fs::exists(to, e) ? fs::file_size(to, e) : 0;
+                        if(have > size) { fs::remove(to, e); have = 0; }
+                        std::ofstream out(to, std::ios::binary | std::ios::app);
+                        bool first = true;
+                        const auto status = have == size ? 206 : get(url, have, [&](int answer, const char* data, size_t n) {
+                            if(answer != 200 && answer != 206) return false;
+                            // A 200 to a range is the whole file again: what was there goes first.
+                            if(first && answer == 200 && have) { out.close(); out.open(to, std::ios::binary | std::ios::trunc); have = 0; }
+                            first = false;
+                            if(have + n > size) return false;
+                            out.write(data, std::streamsize(n)); have += n;
+                            return bool(out);
+                        });
+                        out.close();
+                        if(status != 200 && status != 206) { why = url + " answered " + std::to_string(status); continue; }
+                        if(have < size) { why = "the download from " + url + " was cut short; installing again resumes it"; continue; }
+                        if(assets::sha256File(to) == sha256) return;
+                        fs::remove(to, e); // a mirror's bad copy: refused, and the next one tried
+                        why = url + " served a file that is not the one the index names";
+                    }
+                    catch(const std::runtime_error& e) { why = e.what(); }
+                    if(cancel_ && *cancel_) break;
+                }
+                bad("cannot fetch the package file " + sha256 + ": " + why);
+            }
+            void places(const std::vector<std::string>& mirrors, const std::string& blobBase) override
+            {
+                for(auto m : mirrors) if(webAddress(m)) { if(m.back() != '/') m += '/'; mirrors_.push_back(m); }
+                blobBase_ = blobBase;
+            }
+
+        private:
+            // One GET through the host's transport, stopped when canceled.
+            int get(const std::string& url, uint64_t from, const std::function<bool(int, const char*, size_t)>& sink)
+            {
+                Transport t;
+                { std::lock_guard lock(transportMutex); t = transport; }
+                if(!t) throw std::runtime_error("this build cannot fetch from the web");
+                return t(url, from, [&](int status, const char* data, size_t n) { return !(cancel_ && *cancel_) && sink(status, data, n); });
+            }
+            std::string base_, blobBase_;
+            std::vector<std::string> mirrors_;
+            const std::atomic<bool>* cancel_;
+        };
+    }
+
+    void setTransport(Transport t) { std::lock_guard lock(transportMutex); transport = std::move(t); }
+
+    std::unique_ptr<Source> web(const std::string& base, const std::atomic<bool>* cancel)
+    {
+        if(!webAddress(base) || base.size() > 4096) throw std::invalid_argument("a repository on the web is an https:// or http:// address");
+        return std::make_unique<Web>(base.back() == '/' ? base : base + "/", cancel);
     }
 
     std::unique_ptr<Source> folder(const fs::path& root)
@@ -155,7 +258,7 @@ namespace oscairn::repository
         return out;
     }
 
-    Index open(Source& source, const std::vector<std::string>& trusted, const std::vector<std::string>& revoked, std::string& rootKey)
+    Index open(Source& source, const std::vector<std::string>& trusted, const std::vector<std::string>& revoked, std::string& rootKey, const fs::path& cache)
     {
         const auto rootBytes = source.read("repository.json", maxRoot);
         const auto root = parse(rootBytes, "repository.json");
@@ -194,14 +297,68 @@ namespace oscairn::repository
         }
         if(!byIndexKey) bad("its root is not signed by its index key");
 
-        // The index, by its hash and size in the root.
-        const V named = detail::member(r, "index");
-        const auto path = text(detail::member(named, "path"), "index.path"), sha = text(detail::member(named, "sha256"), "index.sha256");
-        const auto size = number(detail::member(named, "size"), "index.size");
-        if(!hex(sha, 64) || path != "index/" + sha + ".json.gz" || size > maxIndexGz) bad("its root names the index wrongly");
-        const auto gz = source.read(path, size);
-        if(gz.size() != size || assets::sha256(gz) != sha) bad("the index is not the one its root names (changed or damaged)");
-        const auto doc = parse(gunzip(gz, maxIndex), "the index");
+        source.places(index.mirrors, index.blobBase);
+        // A file the root names by its hash and size: index/<sha256><suffix>.
+        auto named = [&](V entry, const char* suffix) {
+            const auto path = text(detail::member(entry, "path"), "path"), sha = text(detail::member(entry, "sha256"), "sha256");
+            const auto size = number(detail::member(entry, "size"), "size");
+            if(!hex(sha, 64) || path != "index/" + sha + suffix || size > maxIndexGz) bad("its root names its index files wrongly");
+            const auto gz = source.read(path, size);
+            if(gz.size() != size || assets::sha256(gz) != sha) bad(path + " is not the one its root names (changed or damaged)");
+            return gunzip(gz, maxIndex);
+        };
+        // The index this device read last from this repository, if any: used again at the same
+        // serial, or brought up to date by the delta the root names from its serial.
+        const bool plain = !index.repository.empty() && index.repository.size() <= 64 && index.repository.front() != '.' &&
+                           std::all_of(index.repository.begin(), index.repository.end(), [](char c) { return std::isalnum(static_cast<unsigned char>(c)) || c == '.' || c == '-' || c == '_'; });
+        const auto cached = cache.empty() || !plain ? fs::path() : cache / (index.repository + ".index.json");
+        std::string text_;
+        if(!cached.empty())
+            try
+            {
+                std::error_code e;
+                if(fs::is_regular_file(cached, e) && fs::file_size(cached, e) <= maxIndex)
+                {
+                    std::ifstream in(cached, std::ios::binary);
+                    std::string before((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                    const auto old = parse(before, "the kept index");
+                    const auto serial = number(detail::member(old.get(), "serial"), "serial");
+                    if(text(detail::member(old.get(), "repository"), "repository") != index.repository) {}
+                    else if(serial == index.serial) text_ = std::move(before);
+                    else
+                    {
+                        V delta = nullptr;
+                        each(detail::member(r, "deltas"), [&](V x) { if(detail::member(x, "from") && number(detail::member(x, "from"), "from") == serial) delta = x; });
+                        if(delta)
+                        {
+                            const auto change = parse(named(delta, ".delta.gz"), "the delta");
+                            V c = change.get();
+                            if(text(detail::member(c, "format"), "format") != "oscairn.repository-delta" || number(detail::member(c, "version"), "version") != 1 ||
+                               text(detail::member(c, "repository"), "repository") != index.repository || number(detail::member(c, "from"), "from") != serial ||
+                               number(detail::member(c, "serial"), "serial") != index.serial)
+                                bad("the delta is not the root's");
+                            // Each package record the delta holds replaces the kept one; those removed go.
+                            std::map<std::string, std::string> records;
+                            auto record = [&](V p) {
+                                void* json = json_write_minified(p, nullptr);
+                                if(!json) bad("an index record cannot be kept");
+                                records[text(detail::member(p, "id"), "id")] = static_cast<const char*>(json);
+                                std::free(json);
+                            };
+                            each(detail::member(old.get(), "packages"), record);
+                            each(detail::member(c, "packages"), record);
+                            each(detail::member(c, "removed"), [&](V id) { records.erase(text(id, "removed")); });
+                            text_ = "{\"format\":\"oscairn.repository-index\",\"version\":1,\"repository\":" + detail::quote(index.repository) + ",\"serial\":" + std::to_string(index.serial) + ",\"packages\":[";
+                            bool first = true;
+                            for(const auto& [id, json] : records) { text_ += (first ? "" : ",") + json; first = false; }
+                            text_ += "]}";
+                        }
+                    }
+                }
+            }
+            catch(const std::runtime_error&) { text_.clear(); } // a kept index or delta that does not hold: the whole index instead
+        if(text_.empty()) text_ = named(detail::member(r, "index"), ".json.gz");
+        const auto doc = parse(text_, "the index");
         V d = doc.get();
         if(text(detail::member(d, "format"), "format") != "oscairn.repository-index" || number(detail::member(d, "version"), "version") != 1) bad("the index is not format oscairn.repository-index, version 1");
         if(text(detail::member(d, "repository"), "repository") != index.repository || number(detail::member(d, "serial"), "serial") != index.serial) bad("the index is not the root's");
@@ -232,6 +389,15 @@ namespace oscairn::repository
             });
             index.packages.push_back(std::move(package));
         });
+        // Kept for the next refresh once it has all been read.
+        if(!cached.empty())
+        {
+            std::error_code e;
+            fs::create_directories(cache, e);
+            const auto partial = cache / ("." + index.repository + ".partial");
+            { std::ofstream out(partial, std::ios::binary | std::ios::trunc); out << text_; }
+            fs::rename(partial, cached, e);
+        }
         return index;
     }
 }

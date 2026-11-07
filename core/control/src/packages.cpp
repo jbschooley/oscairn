@@ -48,10 +48,13 @@ void see(const std::string& repository,uint64_t serial){
     {std::ofstream o(partial,std::ios::binary|std::ios::trunc);o<<out;if(!o)throw std::runtime_error("cannot write repositories.json");}
     fs::rename(partial,seenFile());
 }
-std::unique_ptr<repository::Source> sourceFor(const std::string& source){
-    if(source.empty() || source.size()>4096)throw std::invalid_argument("a repository is a folder holding repository.json");
+// A repository on the web (https:// or http://), or in a folder.
+std::unique_ptr<repository::Source> sourceFor(const std::string& source,const std::atomic<bool>* cancel){
+    if(source.empty() || source.size()>4096)throw std::invalid_argument("a repository is a folder holding repository.json, or its https:// address");
+    if(source.rfind("https://",0)==0 || source.rfind("http://",0)==0)return repository::web(source,cancel);
     return repository::folder(source);
 }
+fs::path kept(){return dataHome()/"Repositories";} // each repository's index, read last
 fs::path scratch(const char* suffix){std::random_device random;return dataHome()/(".install-"+std::to_string(random())+std::to_string(random())+suffix);}
 }
 
@@ -61,8 +64,9 @@ struct Session::PackageWork {
     PackageJob job;          // guarded by mutex
     bool unpacked=false;     // the thread is done and left a package in `into` to move into place
     Package package; fs::path into; bool acceptUnsignedCode=false;
+    std::atomic<bool> cancel=false; // set when the session goes: a download stops
     std::thread thread;
-    ~PackageWork(){if(thread.joinable())thread.join();if(!into.empty()){std::error_code e;fs::remove_all(into,e);}}
+    ~PackageWork(){cancel=true;if(thread.joinable())thread.join();if(!into.empty()){std::error_code e;fs::remove_all(into,e);}}
 };
 
 namespace {
@@ -85,8 +89,8 @@ uint64_t Session::listRepository(const std::string& source){
     w->thread=std::thread([w,source,trusted,revoked]{
         PackageJob out;
         try{
-            auto from=sourceFor(source);
-            const auto index=repository::open(*from,trusted,revoked,out.rootKey);
+            auto from=sourceFor(source,&w->cancel);
+            const auto index=repository::open(*from,trusted,revoked,out.rootKey,kept());
             see(index.repository,index.serial);
             out.repository=index.repository;out.name=index.name;out.serial=index.serial;
             for(const auto& p:index.packages){
@@ -112,10 +116,10 @@ uint64_t Session::installFromRepository(const std::string& source,const std::str
     packageWork_.reset();
     w->thread=std::thread([w,source,id,version,trusted,revoked]{
         std::string rootKey,error,chosen,repositoryId,name;uint64_t serial=0;
-        Package unpacked;fs::path into,download;
+        Package unpacked;fs::path into,download;bool fetched=false;
         try{
-            auto from=sourceFor(source);
-            const auto index=repository::open(*from,trusted,revoked,rootKey);
+            auto from=sourceFor(source,&w->cancel);
+            const auto index=repository::open(*from,trusted,revoked,rootKey,kept());
             see(index.repository,index.serial);
             repositoryId=index.repository;name=index.name;serial=index.serial;
             const auto package=std::find_if(index.packages.begin(),index.packages.end(),[&](const auto& p){return p.id==id;});
@@ -131,11 +135,12 @@ uint64_t Session::installFromRepository(const std::string& source,const std::str
             if(!pick)throw std::runtime_error(version.empty()?"no version of "+id+" to install":"no version "+version+" of "+id);
             if(const auto why=repository::incompatible(*pick,OSCAIRN_VERSION,platform());!why.empty())throw std::runtime_error(id+" "+pick->version+" cannot be installed here: "+why);
             chosen=pick->version;
-            // The package file: read in place from a folder, else fetched into the data folder;
-            // either way it must be the size and SHA-256 the signed index gives.
+            // The package file: read in place from a folder, else fetched into the data folder,
+            // where a download cut short stays to be resumed; either way it must be the size and
+            // SHA-256 the signed index gives.
             const auto blob=repository::blobPath(pick->archiveSha256);
             auto file=from->local(blob);
-            if(file.empty()){download=scratch(".olib");from->fetch(blob,pick->archiveSize,download);file=download;}
+            if(file.empty()){download=dataHome()/(".install-"+pick->archiveSha256+".partial");from->fetch(pick->archiveSha256,pick->archiveSize,download);file=download;fetched=true;}
             std::error_code e;
             if(!fs::is_regular_file(file,e) || fs::file_size(file,e)!=pick->archiveSize || assets::sha256File(file)!=pick->archiveSha256)
                 throw std::runtime_error("refused: the package file for "+id+" "+chosen+" is missing, or not the one the index names (changed or damaged): "+blob);
@@ -147,7 +152,7 @@ uint64_t Session::installFromRepository(const std::string& source,const std::str
             if(unpacked.signature.key.empty() || signing::keyId(unpacked.signature.key)!=package->publisherKey)
                 throw std::runtime_error("refused: "+id+" "+chosen+" is not signed by its publisher's key "+package->publisherKey);
         }catch(const std::exception& x){error=x.what();std::error_code e;if(!into.empty())fs::remove_all(into,e);into.clear();}
-        if(!download.empty()){std::error_code e;fs::remove(download,e);}
+        if(fetched){std::error_code e;fs::remove(download,e);} // whole: used or refused; one cut short is kept to resume
         std::lock_guard lock(w->mutex);
         w->job.rootKey=rootKey;w->job.repository=repositoryId;w->job.name=name;w->job.serial=serial;w->job.package=id;w->job.version=chosen;
         if(!error.empty()){w->job.state="failed";w->job.error=error;return;}

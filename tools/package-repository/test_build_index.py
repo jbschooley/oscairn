@@ -127,6 +127,26 @@ def main(tool):
         check(out.returncode == 0, "oscairn-sign file signs the root")
         out = run(tool, "verify-file", site / "repository.json", site / "repository.sig")
         check(out.returncode == 0 and out.stdout.split()[1] == made["index"][0], "oscairn-sign verify-file says the index key signed it")
+
+        # A delta from the index published last: the changed package's record, whole.
+        def built(out_dir, serial, *extra):
+            return run(sys.executable, "-I", BUILDER, "--repo", repo, "--oscairn-sign", tool, "--cache", temp / "cache", "--out", out_dir, "--serial", str(serial), *extra)
+        (release_dir / "2.1.0.json").write_text(json.dumps(dict(release, yanked="breaks presets")))
+        out = built(temp / "next", 8, "--previous-site", site)
+        nxt = json.loads((temp / "next" / "repository.json").read_text())
+        deltas = nxt.get("deltas", [])
+        change = json.loads(gzip.decompress((temp / "next" / deltas[0]["path"]).read_bytes())) if len(deltas) == 1 else {}
+        check(out.returncode == 0 and len(deltas) == 1 and deltas[0]["from"] == 7 and deltas[0]["path"] == f"index/{deltas[0]['sha256']}.delta.gz" and
+              hashlib.sha256((temp / "next" / deltas[0]["path"]).read_bytes()).hexdigest() == deltas[0]["sha256"],
+              "the root names a delta from serial 7 by its hash: " + out.stderr.strip())
+        check(change.get("format") == "oscairn.repository-delta" and change["from"] == 7 and change["serial"] == 8 and change["removed"] == [] and
+              [p["versions"][0]["yanked"] for p in change["packages"]] == ["breaks presets"], "the delta holds the changed record, whole")
+        unsigned_site = temp / "unsigned-site"
+        shutil.copytree(site, unsigned_site)
+        (unsigned_site / "repository.sig").unlink()
+        check(built(temp / "nodelta", 8, "--previous-site", unsigned_site).returncode == 0 and "deltas" in json.loads((temp / "nodelta" / "repository.json").read_text()) and
+              json.loads((temp / "nodelta" / "repository.json").read_text())["deltas"] == [], "no delta from a previous root that does not verify")
+        (release_dir / "2.1.0.json").write_text(json.dumps(release))
         (site / "repository.json").write_bytes((site / "repository.json").read_bytes().replace(b'"serial":7', b'"serial":9'))
         check(run(tool, "verify-file", site / "repository.json", site / "repository.sig").returncode != 0, "a changed root is refused")
 

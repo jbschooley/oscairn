@@ -9,6 +9,7 @@ repository's static tree to --out:
 
     repository.json            the root, unsigned: sign it with `oscairn-sign file`
     index/<sha256>.json.gz     the index
+    index/<sha256>.delta.gz    with --previous-site, the change from the index published last
     revocations/<sha256>.json  the revocation list
     blobs.txt                  the SHA-256 of every archive, each in --cache under that name
 
@@ -309,6 +310,37 @@ def write_named(out, folder, data, suffix):
     return {"path": f"{folder}/{digest}{suffix}", "sha256": digest, "size": len(data)}
 
 
+def delta(previous, index, config, tool, out):
+    """The change from the last published index to this one, for devices that have it: each
+    package record that changed, whole, and the IDs removed. Written only when the previous root
+    verifies with this repository's index key and its index is the one it names; otherwise
+    devices fetch the whole index, so none is listed."""
+    if not previous or not (previous / "repository.json").is_file():
+        return []
+    try:
+        run = subprocess.run([tool, "verify-file", str(previous / "repository.json"), str(previous / "repository.sig")], capture_output=True, text=True, timeout=60)
+        root = json.loads((previous / "repository.json").read_bytes())
+        if run.returncode != 0 or config.get("indexKey", {}).get("key") not in run.stdout.split():
+            raise ValueError("the previous root is not signed by the index key")
+        if not HEX64.match(root["index"]["sha256"]) or root["index"]["path"] != f"index/{root['index']['sha256']}.json.gz":
+            raise ValueError("the previous root names its index wrongly")
+        gz = (previous / root["index"]["path"]).read_bytes()
+        if sha256(gz) != root["index"]["sha256"]:
+            raise ValueError("the previous index is not the one its root names")
+        before = json.loads(gzip.decompress(gz))
+    except (OSError, ValueError, KeyError, TypeError) as e:
+        print(f"no delta: {e}", file=sys.stderr)
+        return []
+    if before.get("repository") != index["repository"] or not isinstance(before.get("serial"), int) or before["serial"] >= index["serial"]:
+        return []
+    old = {p["id"]: p for p in before.get("packages", [])}
+    new = {p["id"]: p for p in index["packages"]}
+    change = {"format": "oscairn.repository-delta", "version": 1, "repository": index["repository"], "from": before["serial"], "serial": index["serial"],
+              "packages": [p for i, p in sorted(new.items()) if old.get(i) != p], "removed": sorted(set(old) - set(new))}
+    named = write_named(out, "index", gzip.compress(dumps(change), mtime=0), ".delta.gz")
+    return [dict(named, **{"from": before["serial"]})]
+
+
 def dumps(value):
     return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode()
 
@@ -321,6 +353,7 @@ def main():
     ap.add_argument("--out", type=Path, required=True, help="where the repository's tree is written")
     ap.add_argument("--serial", type=int, required=True, help="the index's serial; higher than any before")
     ap.add_argument("--previous", type=Path, help="the repository before this change, to check nothing published changed")
+    ap.add_argument("--previous-site", type=Path, help="the last published root, its signature and index, to write a delta from")
     ap.add_argument("--check", action="store_true", help="for a pull request: the root and index keys need not be set")
     args = ap.parse_args()
     root, problems = args.repo, Problems()
@@ -388,6 +421,7 @@ def main():
         "indexKey": config.get("indexKey", {}),
         "index": write_named(out, "index", gzip.compress(dumps(index), mtime=0), ".json.gz"),
         "revocations": write_named(out, "revocations", dumps(revoked), ".json"),
+        "deltas": delta(args.previous_site, index, config, args.oscairn_sign, out),
         "blobBase": blob_base,
         "mirrors": config.get("mirrors", []),
     }

@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 """Installing from a package repository (RFC 0031 step 1), through RPC.
 
-usage: repository.py RPC-SERVER PLUGIN OSCAIRN-SIGN FIXTURE.clap BUILD-INDEX.py
+usage: repository.py RPC-SERVER PLUGIN OSCAIRN-SIGN FIXTURE.clap BUILD-INDEX.py [WEB-RPC-SERVER]
 
 Makes throwaway keys, packs plugin packages with oscairn-sign, builds a repository with the
 package repository template's index builder, signs its root, and installs from it as a folder:
@@ -11,6 +11,9 @@ refused, leaving nothing behind. An unpacked package folder installs, and one wi
 file is refused.
 """
 import hashlib
+import http.server
+import socket
+import threading
 import json
 import os
 import platform as host
@@ -31,6 +34,7 @@ except ImportError:
     print('JSON Schema validator not installed; requests are not checked against the schema')
 
 server, plugin, tool, fixture, builder = (Path(a).resolve() for a in sys.argv[1:6])
+web = Path(sys.argv[6]).resolve() if len(sys.argv) > 6 else None  # a session that fetches from the web: the HTTP phase only
 machine = {'arm64': 'arm64', 'aarch64': 'arm64', 'x86_64': 'x86_64', 'AMD64': 'x86_64'}[host.machine()]
 here = ('macos' if sys.platform == 'darwin' else 'windows' if sys.platform == 'win32' else 'linux') + '-' + machine
 elsewhere = 'linux-arm64' if here != 'linux-arm64' else 'macos-arm64'
@@ -117,17 +121,141 @@ with tempfile.TemporaryDirectory(prefix='oscairn-repository-') as temporary:
         'format': 'oscairn.repository-publisher', 'version': 1, 'id': 'org.kick', 'name': 'KICK', 'key': keys['publisher'][1],
         'verification': 'https://kick.example/.well-known/oscairn-publisher.json'}))
 
-    def site(name, serial):
+    def site(name, serial, *extra):
         """The repository as the index builder makes it, signed, with its blobs under blobs/<ab>/."""
         out = temp / name
         built = subprocess.run([sys.executable, '-I', builder, '--repo', repo, '--oscairn-sign', tool, '--cache', temp / 'cache',
-                                '--out', out, '--serial', str(serial)], capture_output=True, text=True, timeout=300)
+                                '--out', out, '--serial', str(serial), *extra], capture_output=True, text=True, timeout=300)
         assert built.returncode == 0, built.stderr
         run(tool, 'file', temp / 'index.key', out / 'repository.json', out / 'repository.sig')
         for blob in (out / 'blobs.txt').read_text().split():
             (out / 'blobs' / blob[:2]).mkdir(parents=True, exist_ok=True)
             shutil.copyfile(temp / 'cache' / blob, out / 'blobs' / blob[:2] / blob)
         return out
+
+    if web:
+        # Over HTTP (RFC 0031 step 2), from a local server: the tree at /, a tampered mirror at
+        # /bad/ and a good one at /good/. The root lists both mirrors, the bad one first, and a
+        # blob base nothing answers. Every request is logged, and chosen ones are cut short.
+        state = {'log': [], 'cut': set(), 'site': None, 'bad': None}
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            protocol_version = 'HTTP/1.1'
+
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                state['log'].append((self.path, self.headers.get('Range')))
+                for prefix, root in (('/bad/', state['bad']), ('/good/', state['site']), ('/', state['site'])):
+                    if self.path.startswith(prefix):
+                        relative = self.path[len(prefix):]
+                        break
+                file = root / relative
+                if '..' in relative or not file.is_file():
+                    self.send_response(404)
+                    self.send_header('Content-Length', '0')
+                    self.end_headers()
+                    return
+                data = file.read_bytes()
+                ranged = self.headers.get('Range', '')
+                start = int(ranged[6:].split('-')[0]) if ranged.startswith('bytes=') else 0
+                body = data[start:]
+                self.send_response(206 if start else 200)
+                self.send_header('Content-Length', str(len(body)))
+                if start:
+                    self.send_header('Content-Range', f'bytes {start}-{len(data) - 1}/{len(data)}')
+                self.end_headers()
+                if self.path in state['cut']:
+                    state['cut'].discard(self.path)
+                    self.wfile.write(body[:len(body) // 2])
+                    self.wfile.flush()
+                    time.sleep(0.3)  # the half arrives before the connection drops
+                    self.connection.shutdown(socket.SHUT_RDWR)
+                    self.close_connection = True
+                    return
+                self.wfile.write(body)
+
+        httpd = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+        threading.Thread(target=httpd.serve_forever, daemon=True).start()
+        base = f'http://127.0.0.1:{httpd.server_address[1]}/'
+        config = json.loads((repo / 'repository-config.json').read_text())
+        config.update(mirrors=[base + 'bad/', base + 'good/'], blobBase='https://127.0.0.1:9/nothing/')
+        (repo / 'repository-config.json').write_text(json.dumps(config))
+        state['site'] = site('web7', 7)
+        state['bad'] = temp / 'web-bad'
+        shutil.copytree(state['site'], state['bad'])
+        synth_blob = hashlib.sha256(synth.read_bytes()).hexdigest()
+        bad_blob = state['bad'] / 'blobs' / synth_blob[:2] / synth_blob
+        bad_blob.write_bytes(bad_blob.read_bytes()[:-1] + b'!')
+        blob_path = f'blobs/{synth_blob[:2]}/{synth_blob}'
+        home = temp / 'web-home'
+        home.mkdir()
+        p = subprocess.Popen([web], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, encoding='utf-8', env={**os.environ, 'OSCAIRN_DATA_HOME': str(home)})
+
+        def fetched():
+            paths = [path for path, _ in state['log']]
+            state['log'].clear()
+            return paths
+
+        try:
+            rpc('trust.set', {'key': keys['root'][1], 'name': 'Test repository', 'scope': ['repositories']})
+            rpc('trust.set', {'key': keys['publisher'][1], 'name': 'KICK', 'scope': ['plugins']})
+            state['log'].clear()
+            listing = job('packages.list', {'source': base})
+            paths = fetched()
+            check(listing['state'] == 'done' and listing['serial'] == 7 and len(listing['packages']) == 2, 'a repository on the web lists what it offers: ' + listing['error'])
+            check(paths[:2] == ['/repository.json', '/repository.sig'] and len(paths) == 3 and paths[2].startswith('/index/') and paths[2].endswith('.json.gz'),
+                  'the first refresh fetches the root and the whole index: ' + json.dumps(paths))
+            listing = job('packages.list', {'source': base})
+            paths = fetched()
+            check(listing['state'] == 'done' and paths == ['/repository.json', '/repository.sig'], 'a refresh with nothing new fetches the root alone: ' + json.dumps(paths))
+            record = repo / 'packages' / 'org.kick.test.synth' / '2.0.0.json'
+            record.write_text(json.dumps(dict(json.loads(record.read_text()), yanked='a test')))
+            state['site'] = site('web8', 8, '--previous-site', state['site'])
+            listing = job('packages.list', {'source': base})
+            paths = fetched()
+            yanked = {v['version']: v['yanked'] for p in listing['packages'] if p['id'] == 'org.kick.test.synth' for v in p['versions']}
+            check(listing['state'] == 'done' and listing['serial'] == 8 and len(paths) == 3 and paths[2].endswith('.delta.gz') and yanked == {'1.0.0': '', '2.0.0': 'a test'},
+                  'a refresh with one changed package fetches the root and one delta, and applies it: ' + json.dumps(paths) + ' ' + json.dumps(yanked))
+
+            def store():
+                return rpc('plugins.list')['plugins']
+
+            def leftovers():
+                return sorted(e.name for e in home.iterdir() if e.name.startswith('.install-'))
+
+            # An install whose every download is cut short keeps what it fetched, and the next
+            # one resumes it. The mirrors serve the good tree for this.
+            state['bad'] = state['site']
+            state['cut'] = {'/bad/' + blob_path, '/good/' + blob_path, '/' + blob_path}
+            first = job('packages.install', {'source': base, 'id': 'org.kick.test.synth'})
+            kept = home / f'.install-{synth_blob}.partial'
+            have = kept.stat().st_size if kept.is_file() else 0
+            check(first['state'] == 'failed' and 'resumes' in first['error'] and 0 < have < synth.stat().st_size and store() == [],
+                  'a download cut short fails, keeping what it fetched: ' + first['error'])
+            fetched()
+            second = job('packages.install', {'source': base, 'id': 'org.kick.test.synth'})
+            ranges = [r for path, r in state['log'] if path.endswith(synth_blob)]
+            check(second['state'] == 'done' and ranges == [f'bytes={have}-'] and len(store()) == 1 and leftovers() == [],
+                  'and installing again resumes it with a range request: ' + json.dumps(ranges) + ' ' + second['error'])
+
+            # A mirror serving a tampered blob is refused and the next one used; one cut short
+            # midway is resumed from another place in the same install.
+            rpc('plugins.remove', {'format': 'clap', 'id': 'org.kick.test.synth', 'version': '1.0.0'})
+            state['bad'] = temp / 'web-bad'
+            state['cut'] = {'/good/' + blob_path}
+            fetched()
+            third = job('packages.install', {'source': base, 'id': 'org.kick.test.synth'})
+            log = [(path, r) for path, r in state['log'] if path.endswith(synth_blob)]
+            check(third['state'] == 'done' and [path for path, _ in log][:2] == ['/bad/' + blob_path, '/good/' + blob_path] and log[-1][0] == '/' + blob_path and (log[-1][1] or '').startswith('bytes=')
+                  and log[-1][1] != 'bytes=0-' and len(store()) == 1 and leftovers() == [],
+                  'a tampered mirror is refused, the next used, and a cut download resumed elsewhere: ' + json.dumps(log) + ' ' + third['error'])
+        finally:
+            p.stdin.close()
+            p.wait(timeout=30)
+            httpd.shutdown()
+        sys.exit(1 if failures else 0)
 
     good = site('site', 7)
     home = temp / 'home'
