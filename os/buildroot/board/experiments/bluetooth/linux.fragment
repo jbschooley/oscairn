@@ -1,0 +1,10 @@
+# Bluetooth for the stack measurement (RFC 0036): BR/EDR and LE, and the virtual HCI driver
+# that BlueZ's btvirt emulator uses in place of a radio.
+CONFIG_BT=y
+CONFIG_BT_BREDR=y
+CONFIG_BT_LE=y
+CONFIG_BT_HCIVHCI=y
+# btvirt's LE controller does its AES through the kernel's crypto sockets (AF_ALG).
+CONFIG_CRYPTO_USER_API_HASH=y
+CONFIG_CRYPTO_USER_API_SKCIPHER=y
+CONFIG_CRYPTO_AES=y
