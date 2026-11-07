@@ -544,6 +544,18 @@ a product whose board lacks a radio but wants one. Which dongles support LE Audi
 
 ## Open questions
 
+Decided by the owner, 2026-11-07: **the Bluetooth stack is a build option set per product**, not
+one choice for all. A Buildroot choice, `BR2_PACKAGE_OSCAIRN_BLUETOOTH_STACK` (none, BlueALSA, or
+PipeWire for Bluetooth only), is picked by each product's defconfig, and the device profile names
+it; the build check that keeps the profile and the defconfig consistent covers it. Audio needs no
+engine change either way (an ALSA device name, as above). BLE MIDI differs: with BlueALSA,
+BlueZ's MIDI plugin is an ALSA sequencer port the engine already reads; with PipeWire, a small
+PipeWire MIDI backend in the engine, which also keeps the BLE timestamps. The engine reports which
+stack it has in its Bluetooth capability. CI builds and tests each stack a product uses, with
+`btvirt` as the measurement did; PipeWire products lower its real-time threads (FIFO 88 and 83
+measured) and keep them off the audio cores (RFC 0035). The measurements above inform each
+product's choice.
+
 From the owner, 2026-11-07 (to verify on the hardware): **the KICK and the Ignite are believed to
 have Bluetooth; the MODX M is believed not to** ("maybe it's there in hardware but not supported in
 software"), so its products build without Bluetooth (RFC 0035's rule).
