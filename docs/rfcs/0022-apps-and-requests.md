@@ -429,23 +429,28 @@ step 6.
 - How a device without a touch screen chooses between two apps.
 - Whether actions belong in the control API's capability list for clients that are not apps.
 
+Decided by the owner, 2026-11-07:
+
+- **A ported DAW's audio:** an audio node in the engine's graph, the DAW keeping its own engine and
+  plugins (the recommendation). Still open below: whether a DAW's own plugins may run on a device.
+- **The device's display:** the Wayland shell comes first. Third-party apps on devices wait for it,
+  rather than running in the meantime as signed-only.
+- **Platforms:** no platform is an absolute requirement for an app. Building for every platform
+  is encouraged, and Oscairn should make CI for that easy to set up (a template, as the package
+  repository's is). First-party apps keep RFC 0006's requirement of macOS and Linux ARM64.
+- **A developer mode,** on the desktop and on devices when turned on explicitly: an app started
+  by hand connects with full access through the user's socket, skipping packaging and
+  permissions.
+
 For the owner, from [what an app is](#what-an-app-is):
 
-- **A ported DAW's audio:** an audio node with the DAW hosting its own plugins (recommended for
-  porting), or only DAWs that use the engine's graph? If the node: may a DAW's own plugins,
-  outside per-plugin isolation and the plugin store, run on a device, or only on the desktop?
+- **A ported DAW's own plugins:** may a DAW's plugins, outside per-plugin isolation and the plugin
+  store, run on a device, or only on the desktop?
 - **Apps and an engine restart:** with the engine as supervisor, apps restart with it and must
   keep their state saved. Should they survive it instead, which needs a supervisor outside the
   engine (the session, or RFC 0027's watchdog) passing them a new connection?
-- **The device's display:** the shell as a Wayland compositor with an X server per X11 app, as
-  proposed, and is it acceptable that third-party apps wait for it on devices?
-- **Platforms:** must every app ship macOS and Linux ARM64 builds, as RFC 0006 requires of
-  first-party apps, and Linux x86-64 desktop builds as well? Windows?
 - **Unsigned apps on products:** RFC 0006 lets a profile refuse unsigned code. Should the KICK's
   profile refuse unsigned apps by default?
-- **Running apps by hand on the desktop:** a developer starting an app binary directly would
-  connect through the user's socket with full access. Allow it as a developer mode, or require
-  starting through the engine?
 - **Background control:** may an app behind keep the pads and knobs (`background`), or does the
   app in front always have them?
 - **Performance leaving the shell's process:** last in the order above; is that the right place,
