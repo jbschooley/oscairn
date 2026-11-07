@@ -427,6 +427,9 @@ nothing here bypasses the control API.
 
 ## Open questions
 
+Decided by the owner, 2026-11-07: **no upload for now.** Crash reports and support files are saved to
+USB or a paired computer only; hosting, retention and an opt-in upload are left for later.
+
 - **Telemetry and sending reports (the owner's call):** may a product offer, opt-in only and off
   by default, to upload crash reports or support files? If so, to whom (the project, the
   manufacturer), hosted where, kept how long. RFC 0031 rules out telemetry to the package

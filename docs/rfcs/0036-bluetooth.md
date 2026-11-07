@@ -466,6 +466,11 @@ a product whose board lacks a radio but wants one. Which dongles support LE Audi
 
 ## Open questions
 
+Decided by the owner, 2026-11-07: **headphones mirror Main by default, as a setting** the user can
+change to replace the speakers while they are connected. The Linux stack (BlueALSA or PipeWire
+for Bluetooth only) is still open: the owner finds LE Audio and BLE MIDI timestamps useful and
+asked how much heavier PipeWire is.
+
 - **BlueALSA or PipeWire** for the device: BlueALSA is recommended for its size and fit; PipeWire
   for Bluetooth only is the path if LE Audio or BLE MIDI timestamps are wanted early.
 - **AAC:** `fdk-aac` is licensed by Fraunhofer on its own terms; whether the image may ship it, or

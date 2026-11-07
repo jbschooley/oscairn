@@ -628,6 +628,10 @@ first. Step 8 comes before any image is distributed outside the project.
 
 ## Open questions
 
+Decided by the owner, 2026-11-07: **the time design is adopted** as written: a known or unknown
+time with a floor, sources in the order above, a paired client may set it, and NTP from the
+project's or the standard pool's servers.
+
 Real-time:
 
 - The profile's audio cores as a list of core numbers, and the audio interrupt's name: RFC 0024's
