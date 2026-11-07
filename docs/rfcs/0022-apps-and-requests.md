@@ -441,18 +441,23 @@ Decided by the owner, 2026-11-07:
 - **A developer mode,** on the desktop and on devices when turned on explicitly: an app started
   by hand connects with full access through the user's socket, skipping packaging and
   permissions.
+- **A ported DAW's own plugins** may run on a device too, with no restriction beyond the app's
+  own containment (its memory and CPU reservation, the hang rule, recycling).
+- **Unsigned apps on the KICK** are refused by default, as unsigned plugin builds are, unless the
+  user explicitly allows one.
+- **Background control** is a permission: an app behind may keep the pads and knobs when the user
+  grants it `background` (a sequencer driving pads while another app is shown); without it the
+  controls follow the screen.
 
 For the owner, from [what an app is](#what-an-app-is):
 
-- **A ported DAW's own plugins:** may a DAW's plugins, outside per-plugin isolation and the plugin
-  store, run on a device, or only on the desktop?
 - **Apps and an engine restart:** with the engine as supervisor, apps restart with it and must
-  keep their state saved. Should they survive it instead, which needs a supervisor outside the
-  engine (the session, or RFC 0027's watchdog) passing them a new connection?
-- **Unsigned apps on products:** RFC 0006 lets a profile refuse unsigned code. Should the KICK's
-  profile refuse unsigned apps by default?
-- **Background control:** may an app behind keep the pads and knobs (`background`), or does the
-  app in front always have them?
+  keep their state saved. Surviving it instead costs little: the shell already starts the engine,
+  reconnects and re-attaches when it drops (`hosts/standalone/Engine.cpp`), so the shell would
+  supervise apps instead (the same code, in another process), ask the new engine for each app's
+  connection and pass it over (`SCM_RIGHTS`), and the app library reconnects and resyncs. No new
+  process; a few hundred lines and their tests. Apps would then depend on the shell, the simpler
+  process, rather than the engine. Recommended: survive it.
 - **Performance leaving the shell's process:** last in the order above; is that the right place,
   given the stage depends on it?
 - **The hang timings:** 5 seconds in front, 10 behind, as proposed?
