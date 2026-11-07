@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.28) # FetchContent_Declare EXCLUDE_FROM_ALL (plugins/), set_property(TEST ... DIRECTORY) below
 project(oscairn VERSION 0.1.0 LANGUAGES C CXX)
 if(APPLE)
     enable_language(OBJCXX) # the CLAP host's plugin windows (core/clap-host/src/Window.mm), and JUCE
@@ -25,3 +25,21 @@ enable_testing()
 add_subdirectory(core)
 add_subdirectory(plugins)
 add_subdirectory(hosts)
+
+# Every test gets a data folder of its own unless it names one, so no test writes into the real
+# one (~/Library/Application Support/Oscairn): the engine keeps counters there.
+function(oscairn_isolate_tests dir)
+    get_property(tests DIRECTORY "${dir}" PROPERTY TESTS)
+    foreach(test IN LISTS tests)
+        get_property(environment TEST "${test}" DIRECTORY "${dir}" PROPERTY ENVIRONMENT)
+        if(NOT environment MATCHES "OSCAIRN_DATA_HOME=")
+            set_property(TEST "${test}" DIRECTORY "${dir}" APPEND PROPERTY ENVIRONMENT
+                "OSCAIRN_DATA_HOME=${CMAKE_BINARY_DIR}/test-data/${test}")
+        endif()
+    endforeach()
+    get_property(subdirectories DIRECTORY "${dir}" PROPERTY SUBDIRECTORIES)
+    foreach(subdirectory IN LISTS subdirectories)
+        oscairn_isolate_tests("${subdirectory}")
+    endforeach()
+endfunction()
+oscairn_isolate_tests("${CMAKE_SOURCE_DIR}")

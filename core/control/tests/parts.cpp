@@ -1247,6 +1247,7 @@ namespace
     // back as it was (the same plugins: a note held through it still sounds) or kept.
     void audition(const char* fixture, const fs::path& root)
     {
+        const char* previousHome = std::getenv("OSCAIRN_DATA_HOME"); const std::string savedHome = previousHome ? previousHome : "";
         ::setenv("OSCAIRN_DATA_HOME", (root / "audition-home").c_str(), 1);
         std::string b, half;
         {
@@ -1323,7 +1324,7 @@ namespace
         // Kept: B is the Performance, A rings out and goes.
         s.auditionStart(b); s.auditionStop(true); ring();
         check(s.performanceInfo().name == "B" && s.leaving() == 0 && s.graphState().topology.nodes.size() == 1 && s.audition().id.empty(), "kept, B is open and A gone");
-        ::unsetenv("OSCAIRN_DATA_HOME");
+        if(previousHome) ::setenv("OSCAIRN_DATA_HOME", savedHome.c_str(), 1); else ::unsetenv("OSCAIRN_DATA_HOME"); // back to the test's own folder, never the real one
     }
 
     // Scene transitions: a glide over time along a curve, a part muted on the way fading to
