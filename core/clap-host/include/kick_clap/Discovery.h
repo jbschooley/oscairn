@@ -11,8 +11,8 @@ struct ScanResult { std::vector<Descriptor> plugins; std::vector<ScanFailure> fa
 std::vector<std::filesystem::path> defaultSearchPaths();
 std::vector<std::filesystem::path> findBinaries(const std::vector<std::filesystem::path>& roots, const std::string& extension = ".clap");
 // Loads native code. Only call in the scanner worker or with a trusted fixture. With presets,
-// also indexes each plugin's presets (indexPresets).
-ScanResult inspect(const std::filesystem::path& binary, bool presets = false);
+// also indexes each plugin's presets (indexPresets), its providers finding asset libraries through assets.
+ScanResult inspect(const std::filesystem::path& binary, bool presets = false, const AssetResolver* assets = nullptr);
 // Runs the scanner helper's --presets mode on one binary: a fresh preset index for it, with
 // the scan's timeout, crash isolation and stderr capture, so a slow or hung preset provider
 // runs in another process and this one waits at most presetTimeoutMilliseconds. False with
@@ -34,8 +34,10 @@ bool decodeScan(const std::string&, ScanResult&);
 // pluginIds: inside the plugin, and files of the declared types in the declared places, each
 // under the plugins it names (one naming none is listed for all). Runs plugin code: call it off
 // the audio thread. Stops at maxPresets, and starts no new read after budgetMilliseconds;
-// either, and a provider that does not initialize, is noted in problems.
+// either, and a provider that does not initialize, is noted in problems. With assets, the
+// indexer answers oscairn.assets (draft 2) with library_root, so a provider can declare an
+// installed asset library's folder as a location.
 struct PresetIndex { std::map<std::string, std::vector<Preset>> presets; std::vector<std::string> problems; };
 constexpr size_t maxPresets = 4096, maxPresetNameBytes = 255, maxPresetLocationBytes = 4096;
-PresetIndex indexPresets(const clap_plugin_entry_t* entry, const std::vector<std::string>& pluginIds, uint32_t budgetMilliseconds = 10000);
+PresetIndex indexPresets(const clap_plugin_entry_t* entry, const std::vector<std::string>& pluginIds, uint32_t budgetMilliseconds = 10000, const AssetResolver* assets = nullptr);
 } // namespace kick::clap

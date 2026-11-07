@@ -2,6 +2,7 @@
 #include <kick_clap/Discovery.h>
 #include "Internal.h"
 #include <clap/factory/preset-discovery.h>
+#include <oscairn-clap/assets.h>
 #include <algorithm>
 #include <cctype>
 #include <chrono>
@@ -92,7 +93,7 @@ std::vector<fs::path> findBinaries(const std::vector<fs::path>& roots, const std
     found.erase(fs::path{});
     return {found.begin(), found.end()};
 }
-ScanResult inspect(const fs::path& binary, bool presets) {
+ScanResult inspect(const fs::path& binary, bool presets, const AssetResolver* assets) {
     ScanResult result;
     try {
         auto library = detail::openLibrary(binary.string());
@@ -113,7 +114,7 @@ ScanResult inspect(const fs::path& binary, bool presets) {
         if (presets && discovery) {
             std::vector<std::string> plugins;
             for (const auto& p : result.plugins) plugins.push_back(p.id);
-            auto index = indexPresets(library->entry, plugins);
+            auto index = indexPresets(library->entry, plugins, 10000, assets);
             for (auto& p : result.plugins) p.presets = std::move(index.presets[p.id]);
             for (auto& problem : index.problems) result.failures.push_back({binary.string(), std::move(problem)});
         }
@@ -285,6 +286,7 @@ namespace {
 struct Indexing {
     const std::vector<std::string>* plugins = nullptr;
     PresetIndex* index = nullptr;
+    const AssetResolver* assets = nullptr; // oscairn.assets' library_root, for providers' locations
     std::vector<std::string> extensions;
     struct Location { uint32_t kind; std::string path; };
     std::vector<Location> locations;
@@ -303,14 +305,18 @@ Indexing& of(const clap_preset_discovery_indexer_t* i) { return *static_cast<Ind
 Indexing& of(const clap_preset_discovery_metadata_receiver_t* r) { return *static_cast<Indexing*>(r->receiver_data); }
 }
 
-PresetIndex indexPresets(const clap_plugin_entry_t* entry, const std::vector<std::string>& plugins, uint32_t budgetMs) {
+PresetIndex indexPresets(const clap_plugin_entry_t* entry, const std::vector<std::string>& plugins, uint32_t budgetMs, const AssetResolver* assets) {
     PresetIndex index;
     if (!entry || !entry->get_factory) return index;
     auto* factory = static_cast<const clap_preset_discovery_factory_t*>(entry->get_factory(CLAP_PRESET_DISCOVERY_FACTORY_ID));
     if (!factory) factory = static_cast<const clap_preset_discovery_factory_t*>(entry->get_factory(CLAP_PRESET_DISCOVERY_FACTORY_ID_COMPAT));
     if (!factory || !factory->count || !factory->get_descriptor || !factory->create) return index;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(budgetMs);
-    Indexing data; data.plugins = &plugins; data.index = &index;
+    Indexing data; data.plugins = &plugins; data.index = &index; data.assets = assets;
+    // oscairn.assets from the indexer: library_root only (resolve needs a plugin instance's host).
+    static const oscairn_host_assets_t libraries{nullptr, [](const void* owner, const char* library, const char* minVersion, char* path, uint32_t capacity) {
+        const auto* i = static_cast<const clap_preset_discovery_indexer_t*>(owner);
+        return i && library && path && capacity && of(i).assets && detail::writeLibraryRoot(*of(i).assets, library, minVersion, path, capacity); }};
     clap_preset_discovery_indexer_t indexer{CLAP_VERSION, "Oscairn", "Oscairn", "https://github.com/oscairn/oscairn", "1", &data,
         [](const clap_preset_discovery_indexer_t* i, const clap_preset_discovery_filetype_t* type) {
             if (!type || of(i).extensions.size() >= 64) return false;
@@ -320,7 +326,8 @@ PresetIndex indexPresets(const clap_plugin_entry_t* entry, const std::vector<std
                 (l->location && std::strlen(l->location) > maxPresetLocationBytes) || of(i).locations.size() >= 64) return false;
             of(i).locations.push_back({l->kind, l->location ? l->location : ""}); return true; },
         [](const clap_preset_discovery_indexer_t*, const clap_preset_discovery_soundpack_t*) { return true; },
-        [](const clap_preset_discovery_indexer_t*, const char*) -> const void* { return nullptr; }};
+        [](const clap_preset_discovery_indexer_t* i, const char* id) -> const void* {
+            return id && of(i).assets && !std::strcmp(id, OSCAIRN_EXT_ASSETS) ? &libraries : nullptr; }}; // not draft 1, whose resolve this has not
     clap_preset_discovery_metadata_receiver_t receiver{&data,
         [](const clap_preset_discovery_metadata_receiver_t*, int32_t, const char*) {},
         [](const clap_preset_discovery_metadata_receiver_t* r, const char* name, const char* key) {

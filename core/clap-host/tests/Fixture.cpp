@@ -421,6 +421,14 @@ const clap_preset_discovery_provider_t* createPresetProvider(const clap_preset_d
             const clap_preset_discovery_location_t user{CLAP_PRESET_DISCOVERY_IS_USER_CONTENT, "User", CLAP_PRESET_DISCOVERY_LOCATION_FILE, folder};
             if (!index->declare_location(index, &user)) return false;
         }
+        // The asset library org.kick.test.factory 1.0 or later, when installed: its folder, found
+        // through oscairn.assets' library_root on the indexer, as a fork finds its factory patches.
+        const auto* assets = index->get_extension ? static_cast<const oscairn_host_assets_t*>(index->get_extension(index, OSCAIRN_EXT_ASSETS)) : nullptr;
+        char root[4096];
+        if (assets && assets->library_root && assets->library_root(index, "org.kick.test.factory", "1.0", root, sizeof root)) {
+            const clap_preset_discovery_location_t library{CLAP_PRESET_DISCOVERY_IS_FACTORY_CONTENT, "Factory library", CLAP_PRESET_DISCOVERY_LOCATION_FILE, root};
+            if (!index->declare_location(index, &library)) return false;
+        }
         return true;
     };
     provider.destroy = [](const clap_preset_discovery_provider_t*) {};

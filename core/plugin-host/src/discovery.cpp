@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "oscairn/discovery.h"
+#include "oscairn/assets.h"
 #include <cstdlib>
+#include <optional>
 #ifdef OSCAIRN_LV2
 #include <lilv/lilv.h>
 #include <memory>
@@ -33,7 +35,12 @@ kick::clap::ScanResult scanPlugins(const std::vector<fs::path>& roots,const fs::
     result.failures.insert(result.failures.end(),lv2.failures.begin(),lv2.failures.end());return result;
 }
 kick::clap::ScanResult inspectPlugin(const fs::path& source,bool presets) {
-    if(source.extension()!=".lv2")return kick::clap::inspect(source,presets);
+    if(source.extension()!=".lv2"){
+        // Preset providers find installed asset libraries (oscairn.assets' library_root) in the data folder's store.
+        std::optional<assets::Store> store;
+        try{if(presets){store.emplace();store->root();}}catch(const std::exception&){store.reset();} // no home folder: no libraries
+        return kick::clap::inspect(source,presets,store?&*store:nullptr);
+    }
     kick::clap::ScanResult result;
     try {
 #ifdef OSCAIRN_LV2

@@ -365,6 +365,13 @@ struct Host::Impl {
             return true;
         } catch (const std::exception& e) { return report(e.what()); }
     }
+    // oscairn.assets draft 2: an installed asset library's folder.
+    static bool CLAP_ABI libraryRoot(const void* owner, const char* library, const char* minVersion, char* path, uint32_t pathCapacity) {
+        const auto* h = static_cast<const clap_host_t*>(owner);
+        if (!h || !isMain(h) || !library || !path || !pathCapacity) return false;
+        auto& s = self(h);
+        return s.assets && detail::writeLibraryRoot(*s.assets, library, minVersion, path, pathCapacity);
+    }
     // CLAP preset-load: the plugin reports how loading went.
     static void CLAP_ABI presetError(const clap_host_t* h, uint32_t, const char*, const char*, int32_t, const char* message) {
         self(h).message = std::string("Preset not loaded") + (message ? std::string(": ") + message : std::string());
@@ -448,13 +455,13 @@ struct Host::Impl {
         static const clap_host_event_registry_t registry{queryEventSpace};
         static const clap_host_timer_support_t timer{registerTimer, unregisterTimer};
         static const clap_host_posix_fd_support_t descriptors{registerFd, modifyFd, unregisterFd};
-        static const oscairn_host_assets_t assets{resolveAsset};
+        static const oscairn_host_assets_t assets{resolveAsset, libraryRoot};
         static const clap_host_preset_load_t presetLoad{presetError, presetLoaded};
         static const clap_host_gui_t windows{guiHintsChanged, guiRequestResize, guiRequestShow, guiRequestHide, guiClosed};
         static const oscairn_host_harmony_t harmony{readHarmony};
         if (!id) return nullptr;
         if (!std::strcmp(id, CLAP_EXT_GUI)) return &windows;
-        if (!std::strcmp(id, OSCAIRN_EXT_ASSETS)) return &assets;
+        if (!std::strcmp(id, OSCAIRN_EXT_ASSETS) || !std::strcmp(id, OSCAIRN_EXT_ASSETS_DRAFT_1)) return &assets; // draft 1 is draft 2's first member
         if (!std::strcmp(id, OSCAIRN_EXT_HARMONY)) return &harmony;
         if (!std::strcmp(id, CLAP_EXT_PRESET_LOAD) || !std::strcmp(id, CLAP_EXT_PRESET_LOAD_COMPAT)) return &presetLoad;
         if (!std::strcmp(id, CLAP_EXT_THREAD_CHECK)) return &threads;

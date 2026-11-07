@@ -139,7 +139,8 @@ in the data folder), and builds a real folder of the library from it,
 cannot be made), read-only, registered as the library `<id>` so references resolve by its ID and
 path. Preset discovery crawls folders, so a library needs that tree. One version of a library is
 installed at a time: a new one is built beside the old one, moved into place, and the old one
-removed.
+removed. A plugin finds the folder through `oscairn.assets`' `library_root`, from its preset
+provider too ([plugin porting](plugin-porting.md)).
 
 **Dependencies.** A plugin package names the asset libraries it needs, each by ID and the least
 version, in `dependencies.assets` (every kind has `"dependencies": {"assets": [...]}`; only a

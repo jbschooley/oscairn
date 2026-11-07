@@ -16,6 +16,7 @@
 #include "oscairn/session.h"
 #include "oscairn/package.h"
 #include "oscairn/assets.h"
+#include "oscairn/discovery.h"
 #include "miniz/miniz.h"
 #include "oscairn/wav_file.h"
 #include "../../plugin-host/src/StateFiles.h"
@@ -595,6 +596,22 @@ int main(int argc, char** argv)
             std::string why; try { l.installArchive((temp.path / "Tampered.olib").string(), false); } catch(const std::exception& e) { why = e.what(); }
             check(why.find("not what the manifest says: Assets/wavetables/basic.wt") != std::string::npos, "a tampered asset is refused: " + why);
             check(store.libraryVersion("org.oscairn.analog-factory") == "1.1" && read(newer / "wavetables" / "basic.wt") == "vawt table bytes, fixed", "and the installed library is as it was");
+            // A preset provider finds an installed library's folder through oscairn.assets'
+            // library_root on the indexer (the fixture asks for org.kick.test.factory 1.0 or later)
+            // and its presets are indexed; before it is installed there is no such location.
+            auto presets = [&] {
+                std::string names;
+                for(const auto& plugin : inspectPlugin(fixture, true).plugins)
+                    if(plugin.id == "org.kick.test.midi") for(const auto& p : plugin.presets) names += p.name + ";";
+                return names;
+            };
+            check(presets() == "Quiet;Bright;", "without the library, only the plugin's own presets: " + presets());
+            fs::create_directories(temp.path / "l-presets" / "Pads");
+            std::ofstream(temp.path / "l-presets" / "Pads" / "Warm.kickpreset") << "preset";
+            check(run(tool + " asset-package --license MIT " + shell(temp.path / "Presets.olib") + " org.kick.test.factory 1.2 Presets " + shell(temp.path / "l-presets")).first == 0 &&
+                  l.installArchive((temp.path / "Presets.olib").string(), false).added == 1, "an asset library of presets installs");
+            const auto found = presets();
+            check(found == "Quiet;Bright;Warm;", "with it, the provider's location from library_root is indexed: " + found);
         }
         // A build path without its .clap or .lv2: the store keeps bundles by extension, so such a
         // build installs into the store and is never found again. readPackage refuses it.

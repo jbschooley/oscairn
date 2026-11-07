@@ -2,6 +2,7 @@
 #pragma once
 #include <kick_clap/Host.h>
 #include <atomic>
+#include <cstring>
 #include <filesystem>
 #include <map>
 #include <mutex>
@@ -135,4 +136,14 @@ public:
         return true;
     }
 };
+// oscairn.assets' library_root, for the host and the preset indexer: the plugin's strings bounded,
+// the folder written whole with its NUL or not at all.
+inline bool writeLibraryRoot(const AssetResolver& assets, const char* library, const char* minVersion, char* path, uint32_t capacity) {
+    try {
+        const auto root = assets.libraryRoot(std::string(library, strnlen(library, 256)), minVersion ? std::string(minVersion, strnlen(minVersion, 128)) : std::string());
+        if (root.empty() || root.size() + 1 > capacity) return false;
+        std::memcpy(path, root.c_str(), root.size() + 1);
+        return true;
+    } catch (...) { return false; }
+}
 } // namespace kick::clap::detail

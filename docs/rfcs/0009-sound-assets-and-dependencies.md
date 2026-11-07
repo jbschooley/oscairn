@@ -221,6 +221,15 @@ Steps 1 and 2 are implemented and tested (`assets`, `sampler`, `desktop-sound-pi
   `oscairn.asset-dependencies/draft-2` (draft 1 still accepted) are in [`oscairn-clap/assets.h`](../../core/clap-ext/include/oscairn-clap/assets.h);
   `oscairn.sound-contexts/draft-4` passes the patch's base reference. The Oscairn Legacy Sampler
   uses both and no longer reads directories itself.
+- `oscairn.assets/draft-2` (2026-11-07) adds `library_root(owner, library_id, min_version,
+  path, capacity)`: an installed asset library's read-only folder, `AssetLibraries/<id>/<version>/`,
+  when a version at least `min_version` is installed. Preset discovery crawls folders and a
+  provider's `init` gets an indexer, not a `clap_host`, so Oscairn's indexer answers
+  `oscairn.assets` too, with `resolve` null and `library_root` working: a fork such as Oscairn
+  Analog declares its factory patches' library (`org.oscairn.analog-factory`) as a location.
+  The host answers draft 1 with the same table. `control-archives` installs an asset library
+  of presets and sees the fixture provider's location from `library_root` indexed; the host-side
+  call (from a plugin instance) is not tested yet.
 - Control: `assets.register`, `assets.import`, `assets.libraries`, and `sounds.prepare` with
   `library`/`directory`. The desktop picker copies an imported WAV into the user library and
   registers an imported SFZ's folder.
