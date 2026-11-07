@@ -124,9 +124,13 @@ if(Python3_Interpreter_FOUND)
         $<TARGET_FILE:oscairn-sign> $<TARGET_FILE:kick-clap-fixture-normal> "${PROJECT_SOURCE_DIR}/tools/package-repository/template/scripts/build-index.py")
     set_tests_properties(control-repository PROPERTIES TIMEOUT 120)
 endif()
-# Opt-in, for third-party plugins (not a test here): a plugin through the library, an archive and the store.
+# For third-party plugins (tested here on two of ours): a plugin through the library, an archive and the store.
 add_executable(oscairn-plugin-check tests/plugin_check.cpp)
 target_link_libraries(oscairn-plugin-check PRIVATE oscairn_control)
+# A note effect is checked for the notes it sends, an audio effect for sound.
+add_test(NAME control-plugin-check-note-effect COMMAND oscairn-plugin-check $<TARGET_FILE:oscairn_transpose> org.oscairn.transpose effect)
+add_test(NAME control-plugin-check-audio-effect COMMAND oscairn-plugin-check $<TARGET_FILE:oscairn_delay> org.oscairn.delay effect)
+set_tests_properties(control-plugin-check-note-effect control-plugin-check-audio-effect PROPERTIES TIMEOUT 60)
 
 add_executable(oscairn-parts-test tests/parts.cpp)
 target_include_directories(oscairn-parts-test PRIVATE ../clap-host/tests)

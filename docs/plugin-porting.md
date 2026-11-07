@@ -663,7 +663,9 @@ writing tests:
   JUCE plugin's saved state, as choosing a program in its window would. With
   `--add-build linux-arm64=PATH --keep-archive FILE`, the archive also carries another
   platform's build; `oscairn-plugin-check --install FILE synth|effect` on that platform installs
-  it and checks it opens from the store and plays. It prints one line per check.
+  it and checks it opens from the store and plays. A note effect (CLAP feature `note-effect`,
+  or note ports in and out with no audio output) is played notes and must send notes on, through
+  its part's MIDI out, instead of making sound. It prints one line per check.
 - `core/lv2-host/tests/production/run.py PROBE OUT --case NAME,PATH,ID,synth|effect,PARAM,VALUE`:
   renders at 44.1 and 48 kHz, 37- and 512-frame blocks, offline and realtime, a fresh-instance
   repeat and a parameter edit that must change the sound

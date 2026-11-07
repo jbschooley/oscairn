@@ -400,8 +400,8 @@ Two checks run on a plugin as built, CLAP or LV2, without writing tests:
 - `build-dev/core/control/oscairn-plugin-check PLUGIN ID synth|effect [--param ID=VALUE]`
   plays the plugin in a part, saves it to the library and opens it again with every parameter
   as saved, exports it in an archive with its build, and installs that on a fresh device (a
-  new `OSCAIRN_DATA_HOME`), where it must open from the plugin store and play the same. An LV2
-  plugin stops after the export. `--juce-state NAME=VALUE` sets an attribute in a JUCE
+  new `OSCAIRN_DATA_HOME`), where it must open from the plugin store and play the same. A note
+  effect must send notes on instead of making sound. An LV2 plugin stops after the export. `--juce-state NAME=VALUE` sets an attribute in a JUCE
   plugin's saved state; `--add-build PLATFORM=PATH --keep-archive FILE` carries another
   platform's build, and `--install FILE synth|effect` on that platform checks it there.
 - `core/lv2-host/tests/production/run.py PROBE OUT --case NAME,PATH,ID,synth|effect,PARAM,VALUE`

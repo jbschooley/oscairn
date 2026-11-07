@@ -13,9 +13,12 @@
 // program in its window would; Airwindows Consolidated picks its effect this way
 // (currentProcessorName=Chorus). Each build is checked for libraries it loads from outside the
 // system and its bundle, as oscairn-sign refuses them. Prints one line per check and the renders' levels.
+// A note effect (CLAP feature note-effect, or notes in and out with no audio output) makes no
+// sound: it is played notes, as a synth is, and checked for notes out instead, through its part's MIDI out.
 #include "oscairn/session.h"
 #include "oscairn/package.h"
 #include "../../plugin-host/src/StateFiles.h"
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -35,6 +38,7 @@ namespace
     void device(const fs::path& home) { fs::create_directories(home); ::setenv("OSCAIRN_DATA_HOME", home.c_str(), 1); }
     constexpr uint32_t block = 256, rate = 48000, seconds = 2;
     const AudioLayout stereoIn{{{0, "In", 2, 0}}, {{0, "Main", 2, 0}}};
+    uint32_t notesOut = 0; // note ons the last render's parts sent to MIDI out
 
     // Two seconds: notes at .1 to .6 s and .8 to 1.1 s for a synth; for an effect a two-tone
     // signal that drops at .6 s and stops at 1.2 s. Interleaved stereo.
@@ -43,6 +47,7 @@ namespace
         std::vector<float> inL(block), inR(block), l(block), r(block), out;
         const float* in[2]{inL.data(), inR.data()};
         float* o[2]{l.data(), r.data()};
+        notesOut = 0;
         for(uint32_t at = 0; at < rate * seconds; at += block)
         {
             std::vector<kick::clap::Event> events;
@@ -58,6 +63,7 @@ namespace
             s.service();
             if(!s.process(synth ? nullptr : in, synth ? 0 : 2, o, 2, block, events)) { check(false, "render"); return out; }
             for(uint32_t i = 0; i < block; ++i) { out.push_back(dry ? inL[i] : l[i]); out.push_back(dry ? inR[i] : r[i]); }
+            for(const auto& m : s.midiOutput()) notesOut += m.size == 3 && (m.bytes[0] & 0xF0) == 0x90 && m.bytes[2] > 0;
         }
         return out;
     }
@@ -69,6 +75,19 @@ namespace
         return n ? std::sqrt(p / n) : 1;
     }
     bool finite(const std::vector<float>& a) { for(const auto x : a) if(!std::isfinite(x)) return false; return true; }
+    bool isNoteEffect(Session& s)
+    {
+        const auto n = s.graphState().topology.nodes.at(0);
+        return std::count(n.plugin.features.begin(), n.plugin.features.end(), "note-effect") || (n.noteInputs && n.noteOutputs && n.outputs.empty());
+    }
+    // A render's check: sound, or for a note effect the notes it sent on.
+    void plays(const std::vector<float>& r, bool noteEffect, const std::string& what)
+    {
+        if(noteEffect) check(notesOut > 0, what + " (transforms notes): " + std::to_string(notesOut) + " note ons out");
+        else check(finite(r) && rms(r) > 1e-6, what + ": rms " + std::to_string(rms(r)));
+    }
+    // A MIDI output for a part's MIDI out to reach, so a note effect's notes can be seen.
+    void midiOutput(Session& s) { Control::SessionStatus status; status.midiOutputs = {{MidiEndpoint::Kind::Usb, 1, "Check"}}; s.setHostStatus(status); }
 
     // JUCE's binary XML: "VC2!", the text's size with its terminator (32-bit little-endian), the text.
     bool setJuceAttribute(std::string& state, const std::string& name, const std::string& value)
@@ -105,6 +124,7 @@ std::vector<float> installAndOpen(const fs::path& archive, const fs::path& home,
 {
     device(home);
     Session b(rate, block, {}, stereoIn);
+    midiOutput(b);
     const auto installed = b.installArchive(archive.string(), false, {}, true); // the plugin under test is likely unsigned (RFC 0006)
     check(installed.notes.empty(), "installs with nothing to report");
     Control::LibraryQuery q; q.kind = "performance";
@@ -121,8 +141,9 @@ std::vector<float> installAndOpen(const fs::path& archive, const fs::path& home,
     const auto node = b.graphState().topology.nodes.at(0);
     check(b.sessionStatus().failures.empty() && node.plugin.path.rfind((home / "Plugins").string(), 0) == 0, "opens from the plugin store: " + node.plugin.path);
     if(savedValues) check(values(b, node.id) == *savedValues, "every parameter as saved");
-    const auto there = render(b, synth);
-    check(finite(there) && rms(there) > 1e-6, "plays there: rms " + std::to_string(rms(there)));
+    const bool noteEffect = isNoteEffect(b);
+    const auto there = render(b, synth || noteEffect);
+    plays(there, noteEffect, "plays there");
     const auto store = b.installedPlugins();
     check(store.size() == 1 && store[0].open && store[0].usedBy.size() == 1, "the store says the open Performance plays it");
     std::string platforms;
@@ -142,7 +163,8 @@ int main(int argc, char** argv)
     }
     if(argc < 4) { std::fprintf(stderr, "usage: %s PLUGIN ID synth|effect [--param ID=VALUE] [--juce-state NAME=VALUE] [--add-build PLATFORM=PATH] [--keep-archive FILE]\n       %s --install FILE synth|effect\n", argv[0], argv[0]); return 2; }
     const std::string plugin = fs::absolute(argv[1]).string(), id = argv[2];
-    const bool synth = std::string(argv[3]) == "synth", lv2 = fs::path(plugin).extension() == ".lv2";
+    bool synth = std::string(argv[3]) == "synth";
+    const bool lv2 = fs::path(plugin).extension() == ".lv2";
     std::vector<std::pair<uint32_t, double>> params;
     std::vector<std::pair<std::string, std::string>> juce, builds;
     fs::path keep;
@@ -173,16 +195,22 @@ int main(int argc, char** argv)
         std::vector<float> saved;
         std::vector<double> savedValues;
         std::string performance;
+        bool noteEffect = false;
         // Device A: played in a part, saved, opened again, exported.
         {
             device(temp.path / "a");
             Session a(rate, block, {}, stereoIn);
+            midiOutput(a);
             const auto node = a.add("plugin", plugin, id);
+            noteEffect = isNoteEffect(a);
+            if(noteEffect) { synth = true; std::printf("a note effect: checked for the notes it sends, not sound\n"); }
             const auto part = a.addPart("Part", synth ? PartInput{} : PartInput{PartInput::Kind::Audio, 0});
-            a.insertIntoPart(part, 0, node); a.commit();
+            a.insertIntoPart(part, 0, node);
+            if(noteEffect) a.setPartMidiOut(part, {{{DeviceRule::Kind::All}}, 0});
+            a.commit();
             check(a.sessionStatus().failures.empty(), "loads in a part");
             const auto first = render(a, synth);
-            check(finite(first) && rms(first) > 1e-6, "plays: rms " + std::to_string(rms(first)));
+            plays(first, noteEffect, "plays");
             if(!synth) check(difference(first, render(a, synth, true)) > 1e-6, "changes the signal");
             for(const auto& [param, value] : params) check(a.setParameter(node, param, value), "parameter " + std::to_string(param) + " set");
             // Edits reach the plugin at service(), which a render does: so they are in what is saved.
@@ -218,7 +246,7 @@ int main(int argc, char** argv)
             const auto once = a.graphState().topology.nodes.at(0).id;
             saved = render(a, synth);
             savedValues = values(a, once);
-            check(finite(saved) && rms(saved) > 1e-6, "plays as saved: rms " + std::to_string(rms(saved)));
+            plays(saved, noteEffect, "plays as saved");
             for(const auto& [param, value] : params) check(std::abs(a.parameter(once, param) - value) < 1e-6, "parameter " + std::to_string(param) + " as edited");
             a.loadPerformanceFromLibrary(performance);
             const auto again = render(a, synth);
