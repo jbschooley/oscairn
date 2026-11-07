@@ -32,6 +32,8 @@ it (not tried yet). Its kernel is also configured for QEMU's `virt` machine. See
   which fills the screen with the KICK's screen layout, starting at Home, and asks for
   128-frame audio blocks). Logs: `/var/log/oscairn.log` and
   `/var/log/oscairn-xorg.log`.
+- HTTPS for package repositories: Mbed TLS, libcurl built against it, `ca-certificates`, and
+  the `curl` tool for development ([RFC 0039](../docs/rfcs/0039-network-security.md#progress)).
 - Sound through ALSA. The QEMU image uses the kernel's dummy sound card, which plays
   silently. Audio requests a 128-frame buffer, through the
   same engine as the desktop app; see [audio buffer configuration](../hosts/README.md#audio-buffer-size).

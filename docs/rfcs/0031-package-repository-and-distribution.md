@@ -41,13 +41,13 @@ Checked when built and tested; the sections below say how.
       package's repository; the free-space refusal and a drive pulled midway are not tested)
 - [ ] 2. Fetching over HTTPS: refresh, incremental index updates, mirrors, resumable downloads
       (built 2026-11-06: fetching through the host's transport, JUCE's URL streams: the system's
-      HTTPS on macOS, plain HTTP only on Linux, where HTTPS needs a TLS library the image does
-      not have yet (libcurl with OpenSSL or mbedTLS, and `JUCE_USE_CURL`); the index kept per
+      HTTPS on macOS, libcurl with Mbed TLS on Linux since RFC 0039's step 1 (2026-11-07, which
+      says what it tested); the index kept per
       repository and brought up to date by deltas, which the index builder now writes from the
       root published last (`--previous-site`); blobs from the mirrors, the blob base and the
       repository's own address in turn, a bad copy refused and the next tried; a download cut
       short resumed with a range request; `control-repository-web` against a local HTTP server.
-      Not yet: HTTPS on Linux, fetching the root from a mirror when the repository's own address
+      Not yet: fetching the root from a mirror when the repository's own address
       is down, per-platform fetches (releases are still whole archives), the desktop installing
       from an address)
 - [ ] 3. Publishing: the `oscairn publish` command, checks, immutable versions and yanking
@@ -765,9 +765,9 @@ waits on them. What remains, in order:
    item folder as a zip, each sample and each plugin build as blobs, and a device fetches only
    the items chosen, the samples it lacks and its own platform's builds, unzipping each as it
    streams, so peak storage is the installed size plus one entry from the web too.
-2. HTTPS on Linux devices: a TLS library in the image (libcurl with OpenSSL or mbedTLS) and
-   `JUCE_USE_CURL` on, or a transport over that library directly. The core's `Transport` takes
-   either without change.
+2. HTTPS on Linux devices: done by RFC 0039's step 1 (libcurl with Mbed TLS in the image,
+   `JUCE_USE_CURL` on); the core's `Transport` did not change. A device with no clock still fails
+   on certificate dates until RFC 0039's time floor is built.
 3. A device's list of repositories (`packages.repositories`, `addRepository`,
    `removeRepository`, `.orepo` files), each installed package recording its repository, the
    root fetched from a mirror when the repository's own address is down, and the desktop

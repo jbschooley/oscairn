@@ -18,6 +18,19 @@ levels ([RFC 0027](0027-reliability-levels.md)), the system image
 Checked when built and tested; the sections below say how.
 
 - [ ] 1. A TLS library in the image; HTTPS package fetching on Linux
+      (built 2026-11-07: Buildroot's Mbed TLS 3.6.7, libcurl 8.22.0 built against it,
+      `ca-certificates` and the `curl` tool in the QEMU image; `JUCE_USE_CURL` for the app, the
+      engine and the web test on Linux, with certificates always verified. `control-repository-web`
+      takes `OSCAIRN_TEST_CA`, a test authority the system trusts, and then runs over HTTPS and
+      refuses a wrong host name; it always checks that an unknown authority is refused. Passed
+      with the image's own binaries and libraries in a Linux container that trusts a test
+      authority, and, on macOS, the refusal alone. In the booted QEMU image with a network card,
+      curl and the web test binary fetched over HTTPS from a test authority's server, and curl
+      from a public site with the image's bundle; an untrusted certificate and a wrong host name
+      were refused. Size [below](#the-tls-library). Not yet, so the gate is not met:
+      `control-repository-web` run inside the booted image, which has no Python; the
+      last-known-time rule ([below](#https-fetching-and-the-clock)); the trusted case on macOS,
+      which needs the test authority in the keychain; Mbed TLS 4.1, an open question)
 - [ ] 2. The firewall: default deny, rules generated from the enabled services
 - [ ] 3. The network gateway: a process apart from the engine, WebSocket over TLS, limits
 - [ ] 4. Pairing, client keys, revocation and sessions
@@ -72,7 +85,8 @@ because the image has no TLS library.
   work; plugin loading there stalls other clients' controls, though not the audio (RFC 0022
   plans moving those off the thread).
 - **There is no TCP, WebSocket or TLS code** in the engine. Package fetching uses JUCE's URL
-  streams: the system's HTTPS on macOS, plain HTTP only on Linux (RFC 0031, step 2).
+  streams: the system's HTTPS on macOS, libcurl with Mbed TLS on Linux (RFC 0031, step 2; step 1
+  here).
 - **Signatures do not depend on TLS.** Repositories, packages, builds and apps are checked by
   Ed25519 signatures (Monocypher) against the trust store, and blobs by SHA-256 (RFC 0006,
   RFC 0031). TLS on a fetch adds privacy and protects what is not signed (which packages a
@@ -327,6 +341,16 @@ against 4.x; neither is verified. OpenSSL 3.5 LTS is the fallback if Mbed TLS 4 
 step 1's gate, and the step records the measured size of each in the image, which this RFC does
 not claim.
 
+**Measured in step 1** (the QEMU image, 2026-11-07, Buildroot's Mbed TLS 3.6.7, before and after
+on the same output tree): the root file system grew from 100,007,028 to 102,276,119 bytes,
+2,269,091 bytes (2.2 MiB). `make graph-size` gives `mbedtls` 983,680 bytes, `libcurl` 919,447
+(of which the `curl` tool, for development, is 215,032) and `ca-certificates` 180,744; the other
+185,220 bytes are elsewhere, presumably Oscairn's binaries now built with libcurl (not checked
+file by file). OpenSSL was not measured. Buildroot's `libcurl` names a CA bundle for
+OpenSSL and wolfSSL but not for Mbed TLS, and curl's configure looks for none when
+cross-compiling, so libcurl would trust nothing; `os/buildroot/external.mk` passes
+`--with-ca-bundle=/etc/ssl/certs/ca-certificates.crt`.
+
 ### HTTPS fetching and the clock
 
 Validating a public certificate checks its dates. A device without a battery-backed clock boots
@@ -337,6 +361,13 @@ repositories are checked by signatures anyway, skip date checks for repository f
 Recommended: the second, plus NTP when the user has enabled network time, with date checks kept;
 a fetch that fails on dates says the time is wrong and offers to set it. The trust bundle is
 Buildroot's `ca-certificates`, updated with the image.
+
+**Not built in step 1.** The floor needs the last saved time, which needs RFC 0035's supervisor
+and the data partition, and the image has neither, so there is no small place to put it yet. It
+waits for RFC 0035's step 6 (the time state and the saved floor), and step 1's gate stays open on
+it. Until then a device with no clock fails every HTTPS fetch on dates, and verification is not
+weakened to hide that. The QEMU image is not affected: QEMU's `virt` machine has a real-time
+clock that gives the host's time.
 
 ## The firewall
 

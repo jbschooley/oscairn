@@ -1,8 +1,8 @@
-juce_add_console_app(oscairn_engine_host PRODUCT_NAME "oscairn-engine")
+juce_add_console_app(oscairn_engine_host PRODUCT_NAME "oscairn-engine" NEEDS_CURL TRUE)
 set_target_properties(oscairn_engine_host PROPERTIES OUTPUT_NAME "oscairn-engine")
 target_sources(oscairn_engine_host PRIVATE main.cpp)
 target_compile_definitions(oscairn_engine_host PRIVATE
-    JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_MODAL_LOOPS_PERMITTED=1
+    JUCE_WEB_BROWSER=0 JUCE_MODAL_LOOPS_PERMITTED=1
     OSCAIRN_PLUGIN_DIR="$<TARGET_FILE_DIR:oscairn_step_sequencer>"
     OSCAIRN_PLUGIN_WORKER_PATH="$<TARGET_FILE:oscairn-plugin-worker>"
     OSCAIRN_PLUGIN_SCAN_PATH="$<TARGET_FILE:oscairn-plugin-scan>")

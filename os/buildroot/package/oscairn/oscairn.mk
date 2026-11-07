@@ -32,7 +32,7 @@ ifeq ($(BR2_PACKAGE_OSCAIRN_STANDALONE),y)
 # The built-in themes carry the Inter font.
 OSCAIRN_LICENSE += , OFL-1.1
 OSCAIRN_LICENSE_FILES += hosts/standalone/themes/oscairn-dark/fonts/OFL.txt
-OSCAIRN_DEPENDENCIES += oscairn-juce alsa-lib freetype fontconfig \
+OSCAIRN_DEPENDENCIES += oscairn-juce alsa-lib freetype fontconfig libcurl \
 	xlib_libX11 xlib_libXext xlib_libXinerama xlib_libXrandr \
 	xlib_libXcursor xlib_libXrender
 # JUCE comes from the oscairn-juce package: nothing is downloaded while building.

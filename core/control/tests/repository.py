@@ -9,10 +9,18 @@ an untrusted root, code from an unknown publisher, an incompatible build, a vers
 newer system, a tampered blob, a root whose signature does not verify and an older root are each
 refused, leaving nothing behind. An unpacked package folder installs, and one with a changed
 file is refused.
+
+With WEB-RPC-SERVER, the same from a local web server instead. Over HTTPS (RFC 0039 step 1), a
+certificate from an authority the system does not trust is refused. The rest runs over HTTPS
+only where the system trusts a test authority, which the test cannot arrange itself:
+OSCAIRN_TEST_CA names a folder holding that authority's ca.pem and ca.key (set up in a throwaway
+VM or container); a wrong host name is then refused too.
 """
 import hashlib
 import http.server
 import socket
+import ssl
+import urllib.request
 import threading
 import json
 import os
@@ -190,9 +198,35 @@ with tempfile.TemporaryDirectory(prefix='oscairn-repository-') as temporary:
                     return
                 self.wfile.write(body)
 
-        httpd = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-        threading.Thread(target=httpd.serve_forever, daemon=True).start()
-        base = f'http://127.0.0.1:{httpd.server_address[1]}/'
+        openssl = shutil.which('openssl')
+        trusted = Path(os.environ['OSCAIRN_TEST_CA']) if os.environ.get('OSCAIRN_TEST_CA') else None
+
+        def authority(folder):
+            folder.mkdir()
+            run(openssl, 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '2', '-subj', '/CN=Oscairn test authority',
+                '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign',
+                '-keyout', folder / 'ca.key', '-out', folder / 'ca.pem')
+            return folder
+
+        def serve(ca=None):
+            """A server for the tree on 127.0.0.1, and its address: over HTTPS for localhost, signed by ca, if given."""
+            server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+            if ca:
+                name = temp / f'localhost-{ca.name}'
+                run(openssl, 'req', '-new', '-newkey', 'rsa:2048', '-nodes', '-subj', '/CN=localhost', '-keyout', name.with_suffix('.key'), '-out', name.with_suffix('.csr'))
+                name.with_suffix('.ext').write_text('subjectAltName=DNS:localhost\nextendedKeyUsage=serverAuth\nkeyUsage=critical,digitalSignature,keyEncipherment\nauthorityKeyIdentifier=keyid\n')
+                run(openssl, 'x509', '-req', '-days', '2', '-set_serial', str(int.from_bytes(os.urandom(8), 'big')), '-in', name.with_suffix('.csr'),
+                    '-CA', ca / 'ca.pem', '-CAkey', ca / 'ca.key', '-extfile', name.with_suffix('.ext'), '-out', name.with_suffix('.pem'))
+                context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                context.load_cert_chain(name.with_suffix('.pem'), name.with_suffix('.key'))
+                server.socket = context.wrap_socket(server.socket, server_side=True)
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            return server, f'{"https://localhost" if ca else "http://127.0.0.1"}:{server.server_address[1]}/'
+
+        if trusted and not openssl:
+            sys.exit('OSCAIRN_TEST_CA needs openssl')
+        httpd, base = serve(trusted)
+        print('over ' + base.split(':')[0].upper())
         config = json.loads((repo / 'repository-config.json').read_text())
         config.update(mirrors=[base + 'bad/', base + 'good/'], blobBase='https://127.0.0.1:9/nothing/')
         (repo / 'repository-config.json').write_text(json.dumps(config))
@@ -265,6 +299,24 @@ with tempfile.TemporaryDirectory(prefix='oscairn-repository-') as temporary:
             check(third['state'] == 'done' and [path for path, _ in log][:2] == ['/bad/' + blob_path, '/good/' + blob_path] and log[-1][0] == '/' + blob_path and (log[-1][1] or '').startswith('bytes=')
                   and log[-1][1] != 'bytes=0-' and len(store()) == 1 and leftovers() == [],
                   'a tampered mirror is refused, the next used, and a cut download resumed elsewhere: ' + json.dumps(log) + ' ' + third['error'])
+
+            # Certificates are checked: a refused one fetches nothing. Python's own client
+            # reaching the server with the authority shows the refusal is the certificate's.
+            if not openssl:
+                print('openssl not found; certificate checks not run')
+            else:
+                unknown = authority(temp / 'unknown-authority')
+                other, address = serve(unknown)
+                served = urllib.request.urlopen(address + 'repository.json', timeout=10, context=ssl.create_default_context(cafile=unknown / 'ca.pem')).status == 200
+                fetched()
+                refused = job('packages.list', {'source': address})
+                check(served and refused['state'] == 'failed' and fetched() == [], 'a certificate from an authority the system does not trust is refused: ' + refused['error'])
+                other.shutdown()
+                if trusted:
+                    refused = job('packages.list', {'source': base.replace('localhost', '127.0.0.1')})
+                    check(refused['state'] == 'failed' and fetched() == [], 'a certificate for another host name is refused: ' + refused['error'])
+                else:
+                    print('OSCAIRN_TEST_CA not set; HTTPS with a trusted certificate and a wrong host name not checked')
         finally:
             p.stdin.close()
             p.wait(timeout=30)
