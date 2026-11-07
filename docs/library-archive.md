@@ -72,6 +72,17 @@ oscairn-sign plugin-package --key author.key --license AGPL-3.0-or-later --licen
     "Oscairn Splitters" macos-arm64=oscairn-splitters.clap
 ```
 
+Each plugin keeps its own version, the package's unless named as `<id>@<version>`, to both
+`build` and `--plugin` (setBfree's organ is 0.4.4 and its Leslie 0.2.1); the bundle still goes
+in once, at its first plugin's path, and each plugin installs into its own store folder:
+
+```sh
+oscairn-sign build author.key clap org.oscairn.setbfree,org.oscairn.setbfree.leslie@0.2.1 0.4.4 macos-arm64 setBfree.clap
+oscairn-sign plugin-package --key author.key ... --plugin org.oscairn.setbfree setBfree \
+    --plugin org.oscairn.setbfree.leslie@0.2.1 "setBfree Leslie" setBfree.olib clap org.oscairn.setbfree 0.4.4 \
+    setBfree macos-arm64=setBfree.clap
+```
+
 Installing it puts the bundle into the store under each plugin's own folder, so `plugins.list`
 shows each and each can be removed alone. **Preset-discovery providers are not plugins:** a
 provider in the bundle (setBfree's `org.oscairn.setbfree.programs` beside its organ and Leslie)

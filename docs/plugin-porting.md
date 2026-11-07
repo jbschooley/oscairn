@@ -636,7 +636,7 @@ What changes for the plugin:
   ([license and source](library-archive.md#license-and-source)).
   A bundle holding several plugins is signed for all of them at once (`oscairn-sign build`
   takes the IDs comma-separated) and packed once, each plugin named with `--plugin <id>
-  <name>`; a preset-discovery provider in it is not a plugin and is neither listed nor signed.
+  <name>`; a plugin whose version is not the package's is `<id>@<version>` to both. A preset-discovery provider in it is not a plugin and is neither listed nor signed.
   To publish to Oscairn's package repository, sign the archive too and follow
   [Publishing a package](developer-guide.md#publishing-a-package).
 - **Installing code:** a device installs a build signed by a key its trust store trusts for

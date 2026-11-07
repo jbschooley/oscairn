@@ -28,7 +28,8 @@ namespace
                    "  oscairn-sign build <key-file> <format> <id> <version> <platform> <build>\n"
                    "      sign a plugin build, adding the signature to <build>.sig beside it and replacing\n"
                    "      this key's others there; <id> is a comma-separated list for a bundle holding\n"
-                   "      several plugins, each signed\n"
+                   "      several plugins, each signed, and each may be <id>@<version> for a plugin whose\n"
+                   "      version is not <version>\n"
                    "  oscairn-sign archive <key-file> <archive.olib>\n"
                    "      sign an archive whole (library.sig), replacing any signature over it\n"
                    "  oscairn-sign plugin-package [--key <key-file>] [--plugin <id> <name>]... [--allow-outside-libraries]\n"
@@ -38,7 +39,8 @@ namespace
                    "      pack plugin builds, each with the signatures in <build>.sig beside it, into a\n"
                    "      plugin package (an archive with no items) with that ID and name; with --key,\n"
                    "      signed whole. A bundle holding several plugins names each with --plugin (else\n"
-                   "      its one plugin is <id>, named <name>); <build>.sig signs each of them. A build\n"
+                   "      its one plugin is <id>, named <name>), as <id>@<version> for a plugin whose\n"
+                   "      version is not the package's; <build>.sig signs each of them. A build\n"
                    "      loading libraries from outside the system and its bundle is refused unless\n"
                    "      --allow-outside-libraries, which says what it packed anyway. Its license (an SPDX\n"
                    "      expression), license texts and notices (into Licenses/) and source (an https://\n"
@@ -79,6 +81,14 @@ namespace
             fs::copy_file(f, to);
         }
     }
+    // <id>@<version>, or <id> at the given version: the plugins in one bundle may each have their own.
+    std::pair<std::string, std::string> idAndVersion(const std::string& s, const std::string& version)
+    {
+        const auto at = s.rfind('@');
+        if(at == std::string::npos) return {s, version};
+        if(at == 0 || at + 1 == s.size()) throw std::runtime_error("no ID or version in " + s);
+        return {s.substr(0, at), s.substr(at + 1)};
+    }
     // A repository's file, whole: a root or an index key is a few kilobytes.
     std::string readFile(const fs::path& file)
     {
@@ -113,9 +123,13 @@ int main(int argc, char** argv)
             std::vector<std::string> ids;
             for(size_t at = 0; at <= a[3].size();) { const auto end = std::min(a[3].find(',', at), a[3].size()); ids.push_back(a[3].substr(at, end - at)); at = end + 1; }
             for(const auto& id : ids) if(id.empty()) return usage();
-            for(const auto& id : ids) list.push_back({k.publicKey, signing::sign(k, signing::buildMessage(a[2], id, a[4], a[5], digest))});
+            for(const auto& each : ids) { const auto [id, version] = idAndVersion(each, a[4]); list.push_back({k.publicKey, signing::sign(k, signing::buildMessage(a[2], id, version, a[5], digest))}); }
             signing::writeSignatures(sig, list);
-            for(const auto& id : ids) std::printf("signed %s %s %s %s %s by %s\n", a[2].c_str(), id.c_str(), a[4].c_str(), a[5].c_str(), digest.c_str(), signing::keyId(k.publicKey).c_str());
+            for(const auto& each : ids)
+            {
+                const auto [id, version] = idAndVersion(each, a[4]);
+                std::printf("signed %s %s %s %s %s by %s\n", a[2].c_str(), id.c_str(), version.c_str(), a[5].c_str(), digest.c_str(), signing::keyId(k.publicKey).c_str());
+            }
             return 0;
         }
         if(a.size() == 3 && a[0] == "archive")
@@ -149,11 +163,12 @@ int main(int argc, char** argv)
             p.kind = "plugin"; p.id = rest[2]; p.name = rest[4];
             if(listed.empty()) listed.push_back({rest[2], rest[4]});
             std::string ids;
-            for(const auto& [id, name] : listed)
+            for(const auto& [each, name] : listed)
             {
+                const auto [id, version] = idAndVersion(each, rest[3]);
                 if(std::any_of(p.plugins.begin(), p.plugins.end(), [&](const auto& q) { return q.id == id; })) throw std::runtime_error("plugin " + id + " is listed twice");
-                p.plugins.push_back({rest[1], id, rest[3], name, {}});
-                ids += (ids.empty() ? "" : ", ") + id;
+                p.plugins.push_back({rest[1], id, version, name, {}});
+                ids += (ids.empty() ? "" : ", ") + id + (version == rest[3] ? "" : "@" + version);
             }
             const auto format = rest[1], version = rest[3];
             std::random_device random;
@@ -183,10 +198,10 @@ int main(int argc, char** argv)
                 {
                     bool over = false;
                     for(size_t k = 0; k < p.plugins.size(); ++k)
-                        if(signing::verify(s, signing::buildMessage(format, p.plugins[k].id, version, forPlatform, digest))) { signatures[k].push_back(s); over = true; }
+                        if(signing::verify(s, signing::buildMessage(format, p.plugins[k].id, p.plugins[k].version, forPlatform, digest))) { signatures[k].push_back(s); over = true; }
                     if(!over) throw std::runtime_error("a signature in " + build.string() + ".sig is not over this build of " + ids + " (a preset-discovery provider is not a plugin, and is not signed)");
                 }
-                const auto inside = fs::path("Plugins") / format / pluginFolderName(p.plugins[0].id, version) / forPlatform / build.filename();
+                const auto inside = fs::path("Plugins") / format / pluginFolderName(p.plugins[0].id, p.plugins[0].version) / forPlatform / build.filename();
                 fs::create_directories((staged / inside).parent_path());
                 fs::copy(build, staged / inside, fs::copy_options::recursive);
                 for(size_t k = 0; k < p.plugins.size(); ++k) p.plugins[k].builds.push_back({forPlatform, inside.generic_string(), digest, signatures[k]});

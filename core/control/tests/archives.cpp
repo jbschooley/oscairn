@@ -530,6 +530,35 @@ int main(int argc, char** argv)
             s.add("split", split.string(), "org.oscairn.split"); s.add("join", join.string(), "org.oscairn.join"); s.commit();
             check(s.sessionStatus().failures.empty() && s.graphState().topology.nodes.size() == 2, "both load from the store");
         }
+        // Device V: the plugins in one bundle at their own versions (setBfree's organ and Leslie),
+        // each given as <id>@<version>: signed, packed, installed and listed each at its own.
+        if(splitters)
+        {
+            device(temp.path / "v");
+            const auto author = temp.path / "author.key";
+            const auto build = temp.path / "v-build" / "oscairn-splitters.clap";
+            fs::create_directories(build.parent_path());
+            fs::copy(splitters, build, fs::copy_options::recursive);
+            const auto signedBoth = run(tool + " build " + shell(author) + " clap org.oscairn.split,org.oscairn.join@0.2.1 0.4.4 " + platform() + " " + shell(build));
+            check(signedBoth.first == 0 && signedBoth.second.find("org.oscairn.split 0.4.4") != std::string::npos && signedBoth.second.find("org.oscairn.join 0.2.1") != std::string::npos,
+                  "the bundle is signed for each plugin at its own version: " + signedBoth.second);
+            const auto package = temp.path / "Versions.olib";
+            const auto packed = run(tool + " plugin-package --key " + shell(author) + " --license MIT --plugin org.oscairn.split Split --plugin org.oscairn.join@0.2.1 Join " +
+                                    shell(package) + " clap org.oscairn.splitters 0.4.4 Splitters " + platform() + "=" + shell(build) + " 2>&1");
+            check(packed.first == 0 && packed.second.find("packed clap org.oscairn.split, org.oscairn.join@0.2.1 0.4.4 with 1 builds") != std::string::npos, "oscairn-sign packs them: " + packed.second);
+            const auto read = readPackage(package, {});
+            check(read.plugins.size() == 2 && read.plugins[0].version == "0.4.4" && read.plugins[1].version == "0.2.1" && read.plugins[0].builds.at(0).path == read.plugins[1].builds.at(0).path &&
+                  read.plugins[0].builds[0].signatures.size() == 1 && read.plugins[1].builds[0].signatures.size() == 1, "each is listed and signed at its own version, the bundle once");
+            Session s(48000, 64);
+            s.setTrustedKey({"", authorKey, "Author", {"plugins"}});
+            const auto installed = s.installArchive(package.string(), false);
+            check(installed.notes.empty() && installed.code.size() == 2 && installed.code[0].status == "trusted" && installed.code[1].status == "trusted", "both install, each trusted");
+            const auto listed = s.installedPlugins();
+            check(listed.size() == 2 && listed[0].id == "org.oscairn.join" && listed[0].version == "0.2.1" && listed[1].id == "org.oscairn.split" && listed[1].version == "0.4.4", "the store lists each at its own version");
+            const auto join = temp.path / "v" / "Plugins" / "clap" / pluginFolderName("org.oscairn.join", "0.2.1") / platform() / build.filename();
+            const auto split = temp.path / "v" / "Plugins" / "clap" / pluginFolderName("org.oscairn.split", "0.4.4") / platform() / build.filename();
+            check(bundleDigest(split) == bundleDigest(build) && bundleDigest(join) == bundleDigest(build), "each has the whole bundle in its own folder");
+        }
         // Device L: an asset package (RFC 0009), packed by oscairn-sign from a folder: installed into
         // the asset store by hash with a read-only tree of links, found by path and by its root;
         // a newer version replaces it; a tampered file is refused; a plugin package needing it says

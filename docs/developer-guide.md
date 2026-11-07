@@ -263,7 +263,8 @@ re-sign after every rebuild. `plugin-package` packs builds and their `.sig` file
 [plugin package](library-archive.md#plugin-packages), an archive with no Sounds or
 Performances, signed whole with `--key`; a bundle holding several plugins is signed for all of
 them at once (`build` takes the IDs comma-separated) and packed once, each plugin named with
-`--plugin <id> <name>`. It refuses a build loading libraries from outside the system and its
+`--plugin <id> <name>`, as `<id>@<version>` to both where a plugin's version is not the
+package's. It refuses a build loading libraries from outside the system and its
 bundle ([rules](library-archive.md#plugin-packages)) unless `--allow-outside-libraries`, which
 it reports. `--license`, `--license-file` and `--source <url> <commit-or-tag>` give its license,
 license texts and source, which a GPL, LGPL or AGPL plugin package must have
