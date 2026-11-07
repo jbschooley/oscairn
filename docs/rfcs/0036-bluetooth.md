@@ -288,6 +288,84 @@ Either way the daemons run as their own users, on cores not reserved for audio (
 the engine's audio threads' priority, and supervised by init, and the radio's interrupts (UART or
 SDIO, USB for a dongle) are kept off the reserved cores.
 
+#### Measurements: BlueALSA and PipeWire on the QEMU image
+
+Measured 2026-11-07, to answer how much heavier PipeWire is. Three builds of the QEMU aarch64
+image with Buildroot 2026.08.1's own packages, from the defconfigs in
+`os/buildroot/configs/experiments/` (method, scripts and the `graph-size` CSVs in
+`os/buildroot/board/experiments/bluetooth/`):
+
+- **baseline:** `oscairn_qemu_aarch64_defconfig` unchanged.
+- **BlueALSA:** plus `bluez5_utils` (audio and MIDI plugins), `bluez-alsa`, `sbc`; D-Bus, GLib,
+  PCRE2 and libffi come with them.
+- **PipeWire:** plus `bluez5_utils` (audio plugin; its MIDI plugin off, since PipeWire does BLE
+  MIDI itself), `pipewire`, `wireplumber` with Lua 5.4, `sbc`, `liblc3`; the same D-Bus and GLib.
+  WirePlumber had its ALSA, ALSA MIDI, V4L2 and libcamera monitors disabled (`bluetooth-only.conf`).
+
+Both Bluetooth images also had Bluetooth in the kernel, with the virtual HCI driver and the kernel
+crypto sockets that BlueZ's `btvirt` needs; those two are for the measurement only.
+
+Each image booted in QEMU (`virt`, Cortex-A76, 4 cores, 2 GB, emulated without KVM, in Docker on
+the Mac), with the Oscairn session running and playing as usual. `dbus-daemon` and `bluetoothd`
+started from their init scripts. As root on the console, the script started `btvirt -l1` (one
+emulated BR/EDR + LE controller), then `bluealsa -p a2dp-source -p a2dp-sink -p midi`, or
+`pipewire` and then `wireplumber`. Buildroot has no init scripts for these three. It waited 30 s,
+then read memory and threads from `/proc`, and CPU time over the next 60 s. Two rounds each,
+interleaved; where they differ, both are given.
+
+Both stacks came up: `hci0` was powered, and the BLE MIDI GATT service (`03b80e5a-…`) was registered.
+BlueALSA registered SBC A2DP source and sink endpoints. PipeWire registered SBC source and sink and
+FastStream endpoints, and showed a `bluez_midi.server` node. No LC3 endpoint registered:
+`bluetoothd` ran with Buildroot's default arguments (`-n`, no experimental features), so LE Audio
+was not exercised. No device was connected, so this is idle only.
+
+| | Baseline | BlueALSA | PipeWire for Bluetooth only |
+| --- | --- | --- | --- |
+| Root file system, files (`du -sb target`) | 99.84 MB | 108.45 MB (**+8.61 MB**) | 120.55 MB (**+20.71 MB**) |
+| Root file system, ext4 blocks used | 121.6 MB | 130.4 MB (+8.8 MB) | 143.3 MB (+21.7 MB) |
+| Largest packages added (`graph-size`) | | GLib 4.59 MB, BlueZ 2.05, D-Bus 0.81, PCRE2 0.61, bluez-alsa 0.45, SBC 0.05, libffi 0.04 | PipeWire 10.33 MB, GLib 4.59, BlueZ 2.03, WirePlumber 1.57, D-Bus 0.81, PCRE2 0.61, Lua 0.48, liblc3 0.15, SBC 0.05, libffi 0.04 |
+| Kernel `Image` | 13.24 MB | 13.84 MB (+0.61 MB, Bluetooth and the measurement's extras) | 13.84 MB (the same) |
+| RSS / PSS, `bluetoothd` | | 4.7 / 2.6 MB; 6.7 / 4.5 MB | 4.3 / 2.3 MB |
+| RSS / PSS, the stack's daemons | | `bluealsa` 9.9 / 7.7 MB | `pipewire` 8.3 / 5.8 MB; 5.0 / 2.5 MB. `wireplumber` 23.7 / 20.7 MB; 21.7 / 18.7 MB |
+| RSS / PSS, `dbus-daemon` (system bus) | | 1.7 / 0.6 MB | 1.7 / 0.6 MB |
+| **PSS, all of the above** | | **10.9 MB; 12.8 MB** | **29.4 MB; 24.1 MB** |
+| Threads | | `bluetoothd` 1, `bluealsa` 4 (main, `gmain`, `gdbus`, `pool-spawner`), `dbus-daemon` 1: all `SCHED_OTHER`, nice 0 | `bluetoothd` 1, `dbus-daemon` 1: `SCHED_OTHER`, nice 0. `pipewire` 2: main `SCHED_OTHER` nice -11, **`data-loop.0` `SCHED_FIFO` 88**. `wireplumber` 5: four `SCHED_OTHER` nice -11, **`data-loop.0` `SCHED_FIFO` 83** |
+| CPU, idle, 60 s | | 0 ticks for every process listed (under 0.017 % of a core each) | 0 ticks for every process listed (under 0.017 % of a core each) |
+| QEMU start to login prompt | 1.6 s; 1.6 s | 1.8 s; 1.6 s | 1.7 s; 1.6 s |
+
+What the numbers mean:
+
+- **Disk:** PipeWire for Bluetooth only adds about 12 MB more than BlueALSA. Most of it is
+  PipeWire's own 10.3 MB. Buildroot's package installs PipeWire's whole module set: the
+  PulseAudio protocol module (0.5 MB), the ALSA SPA plugin (0.9 MB, built whenever alsa-lib and udev
+  are in the image, which they are), RTP, VBAN, netjack2, echo cancellation and the tools.
+  Buildroot has no options to leave these out, so a trimmed PipeWire would need a post-build
+  cleanup or a change to the package. That was not tried. GLib, D-Bus and BlueZ are common to both stacks.
+- **RAM:** idle, BlueALSA's processes come to about 11 to 13 MB PSS and PipeWire's to about 24 to
+  29 MB. The difference is mostly WirePlumber (about 19 to 21 MB PSS: GLib, Lua and its scripts).
+  RSS counts shared libraries in full for each process, so the PSS line is the one to add up.
+  `btvirt` (1.5 MB RSS, 0.3 MB PSS) is the test's stand-in radio, so it is not counted.
+- **Real-time threads:** idle, BlueALSA has none. PipeWire and WirePlumber each start a
+  `SCHED_FIFO` data loop at once, at PipeWire's defaults (88 and 83), because they ran as root and
+  `libpipewire-module-rt` could set the priority itself. Under RFC 0027 those must go below the
+  engine's audio threads, which is configurable (`module-rt`'s `rt.prio`), but not tried here. BlueALSA's
+  per-transport I/O threads appear only when a device connects (priority set by `--io-rt-priority`),
+  and they were not seen here.
+- **CPU:** neither stack used a measurable amount idle, at the 10 ms tick resolution (the kernel has
+  no schedstats). The whole guest was 19 to 36 % busy across 4 cores in every variant, including
+  the baseline. That load is the session playing under emulation, while another job loaded the
+  same Mac, and it does not separate the stacks.
+- **Boot:** the time to the login prompt did not change measurably. The stack's daemons were
+  started after login, so their startup is not in it.
+
+Not measured: anything while streaming or with a device connected (no radio). LE Audio. Real
+hardware. Daemons running as their own users. A trimmed PipeWire build.
+PipeWire and WirePlumber logged that there was no session bus or UPower, and ran without them.
+The measurement kernel has no RFCOMM or BNEP. `bluetoothd` logged that, and in the PipeWire runs
+PipeWire's Hands-Free profiles failed to register. The images were built from 48e37b3 with one local guard added for a macOS-only socket
+option in a desktop test (`hosts/standalone/tests/desktop_gaps.cpp`), which otherwise stops the
+Linux build. That test is not part of the image.
+
 ## Bluetooth audio in: a phone to play along to
 
 - The device takes the **A2DP sink** role (BlueALSA `-p a2dp-sink`; PipeWire's `a2dp_sink`): the
@@ -473,7 +551,7 @@ software"), so its products build without Bluetooth (RFC 0035's rule).
 Decided by the owner, 2026-11-07: **headphones mirror Main by default, as a setting** the user can
 change to replace the speakers while they are connected. The Linux stack (BlueALSA or PipeWire
 for Bluetooth only) is still open: the owner finds LE Audio and BLE MIDI timestamps useful and
-asked how much heavier PipeWire is.
+asked how much heavier PipeWire is ([measured](#measurements-bluealsa-and-pipewire-on-the-qemu-image)).
 
 - **BlueALSA or PipeWire** for the device: BlueALSA is recommended for its size and fit; PipeWire
   for Bluetooth only is the path if LE Audio or BLE MIDI timestamps are wanted early.
