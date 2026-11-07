@@ -81,7 +81,7 @@ From `os/buildroot/` and `os/scripts/`, 2026-11-07:
 | Memory | Locked at `instrument` and above when `OSCAIRN_RELIABILITY` says so (RFC 0025, built); `oscairn-session` sets the unlimited `RLIMIT_MEMLOCK` they need and the boot test checks it. The cgroup subtree, `OSCAIRN_CGROUP` and zram are not wired in the image |
 | Logs | `/var/log/oscairn.log` and `/var/log/oscairn-xorg.log`, appended, never rotated |
 | Network, time, TLS | No network services, no NTP, no TLS library (RFC 0031 step 2 notes HTTPS on Linux waits for one) |
-| Licenses | The `oscairn` package declares `AGPL-3.0-or-later` (plus ISC for jalv with LV2, OFL-1.1 for the Inter font with the app); `oscairn-juce` declares `AGPL-3.0` |
+| Licenses | The `oscairn` package declares `AGPL-3.0-or-later` and its vendored code's licenses with their files (MIT for CLAP and miniz, BSD-2-Clause or CC0-1.0 for Monocypher, Unlicense for sheredom's `json.h`; plus ISC for jalv with LV2, OFL-1.1 for the Inter font with the app); `oscairn-juce` declares `AGPL-3.0` |
 | Tests | `os/scripts/boot-test.py`: boots in QEMU, checks the app runs, the engine opened audio, the memory limit and a screenshot; `compare-audio.py` checks a recording against an offline render |
 
 There is no image for real hardware yet. Every gate below that needs a device is unverified until

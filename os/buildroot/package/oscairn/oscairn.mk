@@ -9,8 +9,11 @@ OSCAIRN_VERSION = local
 OSCAIRN_SITE = $(BR2_EXTERNAL_OSCAIRN_PATH)/../..
 OSCAIRN_SITE_METHOD = local
 OSCAIRN_OVERRIDE_SRCDIR_RSYNC_EXCLUSIONS = --exclude '/build*' --exclude '/demo'
-OSCAIRN_LICENSE = AGPL-3.0-or-later
-OSCAIRN_LICENSE_FILES = LICENSE
+OSCAIRN_LICENSE = AGPL-3.0-or-later, MIT (CLAP), MIT (miniz), BSD-2-Clause or CC0-1.0 (Monocypher), \
+	Unlicense (json.h)
+OSCAIRN_LICENSE_FILES = LICENSE core/clap-host/third_party/clap/LICENSE \
+	core/control/third_party/miniz/LICENSE core/control/third_party/monocypher/LICENCE.md \
+	core/control/third_party/sheredom/json.h
 OSCAIRN_DEPENDENCIES = host-pkgconf
 # Nothing is downloaded while building; without tests (Buildroot passes BUILD_TESTING=OFF) the
 # Legacy Sampler is not fetched.
