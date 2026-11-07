@@ -90,6 +90,9 @@ struct AssetResolver {
     // The local path of library/path. An empty sha256 is filled in; a given one must match.
     // Throws std::exception carrying the reason.
     virtual std::string resolve(const std::string& library, const std::string& path, std::string& sha256) = 0;
+    // The folder of an installed asset library holding its files at their paths, when a version at
+    // least minVersion (empty: any) is installed; empty otherwise (oscairn.assets draft 2).
+    virtual std::string libraryRoot(const std::string&, const std::string&) const { return {}; }
 };
 
 struct Statistics {

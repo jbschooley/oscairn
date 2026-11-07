@@ -414,7 +414,7 @@ folder of signed archives into a repository, ready to upload anywhere.
 | Platforms | Each platform the package claims has its build; a first-party package has one for every supported profile ([RFC 0006](0006-packages-and-portability.md#platform-builds-and-hardware)) |
 | Loading | Each plugin scans, instantiates, saves and restores state and processes silence in a sandboxed worker, per platform (Linux ARM64 under QEMU), with a timeout and memory limit; the measurements become estimates |
 | Validation | The developer kit's conformance and realtime-safety tests, as warnings at first |
-| Dependencies | Every required package and version is in this repository |
+| Dependencies | Every required package and version is in this repository (built 2026-11-07 for asset libraries: each a plugin package names is an asset package here at that version or later, and the record names what its archive needs; `package-repository-index`) |
 | Scanning | Files against a malware scanner's signatures (limits below) |
 | Reproducibility | Where a package names its source and builder image, CI rebuilds it and compares, and the index says whether it matched (F-Droid's model; the builder is reproducible already) |
 

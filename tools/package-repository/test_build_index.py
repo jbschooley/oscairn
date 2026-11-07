@@ -257,6 +257,36 @@ def main(tool):
             duo_version = next(p for p in duo_index["packages"] if p["id"] == "com.example.duo")["versions"][0]
             check(duo_version["types"] == {"clap": 2} and duo_version["platforms"]["linux-arm64"]["installed"] == len(b"two plugins in one bundle"),
                   "both plugins listed, the bundle counted once: " + json.dumps(duo_version["platforms"]))
+
+        # Dependencies: a plugin package needing an asset library is refused until the library is
+        # here at that version or later, and its record must name what its archive needs.
+        needy_dir = repo / "packages" / "com.example.needy"
+        needy_dir.mkdir()
+        run(tool, "build", keys / "publisher.key", "clap", "com.example.needy", "1.0.0", "linux-arm64", duo)
+        out = run(tool, "plugin-package", "--license", "MIT", "--asset-dependency", "com.example.factory", "1.2", "--key", keys / "publisher.key",
+                  needy_dir / "1.0.0.olib", "clap", "com.example.needy", "1.0.0", "Needy", f"linux-arm64={duo}")
+        check(out.returncode == 0, "a plugin package naming an asset dependency packs: " + out.stderr.strip())
+        needy_data = (needy_dir / "1.0.0.olib").read_bytes()
+        needy = dict(release, id="com.example.needy", release="1.0.0", license="MIT", source=None, dependencies={"assets": [{"id": "com.example.factory", "version": "1.2"}]},
+                     archive={"path": "1.0.0.olib", "sha256": hashlib.sha256(needy_data).hexdigest(), "size": len(needy_data)})
+        (needy_dir / "1.0.0.json").write_text(json.dumps(needy))
+        out = build(temp / "needy")
+        check(out.returncode != 0 and "needs the asset library com.example.factory 1.2 or later, which this repository does not have" in out.stderr, "a missing asset library is refused: " + out.stderr.strip())
+        factory_dir = repo / "packages" / "com.example.factory"
+        factory_dir.mkdir()
+        (temp / "factory-files").mkdir()
+        (temp / "factory-files" / "Lead.fxp").write_bytes(b"a patch")
+        for version in ("1.0", "1.3"):
+            out = run(tool, "asset-package", "--license", "MIT", "--key", keys / "publisher.key", factory_dir / f"{version}.olib", "com.example.factory", version, "Factory", temp / "factory-files")
+            check(out.returncode == 0, "oscairn-sign packs an asset package: " + out.stderr.strip())
+            data_ = (factory_dir / f"{version}.olib").read_bytes()
+            (factory_dir / f"{version}.json").write_text(json.dumps(dict(release, id="com.example.factory", release=version, license="MIT", source=None, platforms=[],
+                archive={"path": f"{version}.olib", "sha256": hashlib.sha256(data_).hexdigest(), "size": len(data_)})))
+        out = build(temp / "needy-met")
+        check(out.returncode == 0, "and the tree builds once a new enough version is here: " + out.stderr.strip())
+        (needy_dir / "1.0.0.json").write_text(json.dumps({k: v for k, v in needy.items() if k != "dependencies"}))
+        out = build(temp / "needy-unnamed")
+        check(out.returncode != 0 and "`dependencies` is not the archive's" in out.stderr, "a record not naming its archive's dependencies is refused: " + out.stderr.strip())
     finally:
         shutil.rmtree(temp, ignore_errors=True)
     return 1 if failures else 0

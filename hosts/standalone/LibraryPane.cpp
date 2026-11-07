@@ -143,7 +143,7 @@ namespace oscairn::standalone
             source.setJustificationType(juce::Justification::centredLeft);
             list.addAndMakeVisible(source); ++aboutRows_;
         }
-        pluginPackage = a.kind == "plugin";
+        pluginPackage = a.kind == "plugin" || a.kind == "asset"; // no items, so no choice of how: an asset package's library goes into the asset store
         view.setViewedComponent(&list, false);
         view.setScrollBarsShown(true, false);
         for(auto* c : std::initializer_list<juce::Component*>{&view, &go, &cancel}) addAndMakeVisible(c);

@@ -587,7 +587,9 @@ Each starts as an RFC:
   installs asking before plugin code unsigned or by an unknown key; plugin packages carrying
   plugins without Sounds or Performances, a bundle holding several plugins once, refused when a
   build loads libraries from outside the system and its bundle, with their license texts and
-  source (required under the GPL, LGPL and AGPL); on the desktop, signing an
+  source (required under the GPL, LGPL and AGPL); asset packages carrying an asset library,
+  installed by hash with a tree of links, and plugin packages naming the libraries they need,
+  fetched with them from a repository; on the desktop, signing an
   export with a chosen key, the signer shown when installing, and the keys in Settings):
   first a clean-machine, offline Performance/Setlist transfer with managed CLAP packages,
   project manifests/exact dependency locks, target builds, project-local dependency views

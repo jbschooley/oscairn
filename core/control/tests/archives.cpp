@@ -15,6 +15,7 @@
 //   oscairn-archives-test FIXTURE.clap OSCAIRN-SIGN [SPLITTERS.clap]
 #include "oscairn/session.h"
 #include "oscairn/package.h"
+#include "oscairn/assets.h"
 #include "miniz/miniz.h"
 #include "oscairn/wav_file.h"
 #include "../../plugin-host/src/StateFiles.h"
@@ -527,6 +528,73 @@ int main(int argc, char** argv)
             check(fs::exists(split.parent_path().parent_path() / "Licenses" / "COPYING") && fs::exists(join.parent_path().parent_path() / "Licenses" / "COPYING"), "and the license text beside it");
             s.add("split", split.string(), "org.oscairn.split"); s.add("join", join.string(), "org.oscairn.join"); s.commit();
             check(s.sessionStatus().failures.empty() && s.graphState().topology.nodes.size() == 2, "both load from the store");
+        }
+        // Device L: an asset package (RFC 0009), packed by oscairn-sign from a folder: installed into
+        // the asset store by hash with a read-only tree of links, found by path and by its root;
+        // a newer version replaces it; a tampered file is refused; a plugin package needing it says
+        // so while it is missing.
+        {
+            device(temp.path / "l");
+            const auto library = temp.path / "l-library";
+            fs::create_directories(library / "patches" / "Leads"); fs::create_directories(library / "wavetables");
+            std::ofstream(library / "patches" / "Leads" / "Saw Lead.fxp", std::ios::binary) << "CcnK patch bytes";
+            std::ofstream(library / "wavetables" / "basic.wt", std::ios::binary) << "vawt table bytes";
+            std::ofstream(library / ".DS_Store") << "hidden";
+            const auto notice = temp.path / "NOTICE"; std::ofstream(notice) << "Surge factory content";
+            const auto pack = [&](const fs::path& to, const std::string& version) {
+                return run(tool + " asset-package --key " + shell(temp.path / "author.key") + " --license GPL-3.0-or-later --license-file " + shell(notice) + " " + shell(to) +
+                           " org.oscairn.analog-factory " + version + " 'Analog factory content' " + shell(library) + " 2>&1");
+            };
+            const auto packed = pack(temp.path / "Factory-1.0.olib", "1.0");
+            check(packed.first == 0 && packed.second.find("packed asset library org.oscairn.analog-factory 1.0 with 2 files") != std::string::npos, "oscairn-sign packs an asset package: " + packed.second);
+            const auto factory = readPackage(temp.path / "Factory-1.0.olib", {});
+            check(factory.kind == "asset" && factory.assetVersion == "1.0" && factory.assets.size() == 2 && factory.assets[0].path == "patches/Leads/Saw Lead.fxp" && factory.assets[0].size == 16 &&
+                  factory.assets[0].sha256 == assets::sha256("CcnK patch bytes") && factory.license == "GPL-3.0-or-later" && factory.files.count("Licenses/NOTICE"), "it lists each file by path, SHA-256 and size");
+            // A plugin package that needs it, installed first: it says the library is missing.
+            const auto needs = temp.path / "l-build" / "Analog.clap";
+            fs::create_directories(needs.parent_path()); fs::copy_file(fixture, needs);
+            check(run(tool + " plugin-package --license MIT --asset-dependency org.oscairn.analog-factory 1.0 " + shell(temp.path / "Analog.olib") + " clap org.kick.test.synth 1 Analog " + platform() + "=" + shell(needs)).first == 0,
+                  "a plugin package names its asset dependency");
+            check(readPackage(temp.path / "Analog.olib", {}).assetDependencies.size() == 1, "and carries it");
+            Session l(48000, 64);
+            const auto early = l.installArchive((temp.path / "Analog.olib").string(), false, {}, true);
+            check(early.notes.size() == 1 && early.notes[0].find("needs the asset library org.oscairn.analog-factory 1.0 or later, which is not installed") != std::string::npos,
+                  "installed from a file, it says its asset library is missing: " + (early.notes.empty() ? std::string() : early.notes[0]));
+            const auto installed = l.installArchive((temp.path / "Factory-1.0.olib").string(), false);
+            const auto tree = temp.path / "l" / "AssetLibraries" / "org.oscairn.analog-factory" / "1.0";
+            struct stat a{}, b{};
+            ::stat((tree / "wavetables" / "basic.wt").c_str(), &a); ::stat((temp.path / "l" / "assets" / "store" / assets::sha256("vawt table bytes")).c_str(), &b);
+            check(installed.added == 2 && fs::exists(tree / "patches" / "Leads" / "Saw Lead.fxp") && !fs::exists(tree / ".DS_Store") && a.st_ino == b.st_ino && a.st_ino != 0 && (a.st_mode & 0222) == 0,
+                  "installed by hash, its tree read-only links to the store's files");
+            assets::Store store(temp.path / "l" / "assets");
+            kick::clap::AssetReference ref{"org.oscairn.analog-factory", "wavetables/basic.wt", ""};
+            check(store.resolve(ref) == fs::canonical(tree / "wavetables" / "basic.wt") && ref.sha256 == assets::sha256("vawt table bytes"), "a reference resolves by the library's ID and path");
+            check(store.libraryRoot("org.oscairn.analog-factory", "1.0") == tree.string() && store.libraryRoot("org.oscairn.analog-factory", "").size() && store.libraryRoot("org.oscairn.analog-factory", "1.1").empty() &&
+                  store.libraryRoot("org.oscairn.other", "").empty(), "its root, when a version at least the one asked for is installed");
+            check(l.installArchive((temp.path / "Analog.olib").string(), false, {}, true).notes.empty(), "with it installed, the plugin package says nothing missing");
+            // A newer version: the new tree replaces the old.
+            std::ofstream(library / "wavetables" / "basic.wt", std::ios::binary | std::ios::trunc) << "vawt table bytes, fixed";
+            check(pack(temp.path / "Factory-1.1.olib", "1.1").first == 0 && l.installArchive((temp.path / "Factory-1.1.olib").string(), false).added == 2, "a newer version installs");
+            const auto newer = tree.parent_path() / "1.1";
+            check(fs::exists(newer / "wavetables" / "basic.wt") && !fs::exists(tree) && store.libraryRoot("org.oscairn.analog-factory", "1.1") == newer.string() && store.libraryVersion("org.oscairn.analog-factory") == "1.1",
+                  "and replaces the old tree");
+            // A tampered file: the archive copied with one asset's bytes changed, its manifest as signed.
+            {
+                mz_zip_archive in{}, out{};
+                mz_zip_reader_init_file(&in, (temp.path / "Factory-1.1.olib").c_str(), 0);
+                mz_zip_writer_init_file(&out, (temp.path / "Tampered.olib").c_str(), 0);
+                for(mz_uint i = 0; i < mz_zip_reader_get_num_files(&in); ++i)
+                {
+                    mz_zip_archive_file_stat st; mz_zip_reader_file_stat(&in, i, &st);
+                    if(std::string(st.m_filename) != "Assets/wavetables/basic.wt") { mz_zip_writer_add_from_zip_reader(&out, &in, i); continue; }
+                    const std::string changed = "vawt table bytes, FIXED";
+                    mz_zip_writer_add_mem(&out, st.m_filename, changed.data(), changed.size(), MZ_DEFAULT_COMPRESSION);
+                }
+                mz_zip_writer_finalize_archive(&out); mz_zip_writer_end(&out); mz_zip_reader_end(&in);
+            }
+            std::string why; try { l.installArchive((temp.path / "Tampered.olib").string(), false); } catch(const std::exception& e) { why = e.what(); }
+            check(why.find("not what the manifest says: Assets/wavetables/basic.wt") != std::string::npos, "a tampered asset is refused: " + why);
+            check(store.libraryVersion("org.oscairn.analog-factory") == "1.1" && read(newer / "wavetables" / "basic.wt") == "vawt table bytes, fixed", "and the installed library is as it was");
         }
         // A build path without its .clap or .lv2: the store keeps bundles by extension, so such a
         // build installs into the store and is never found again. readPackage refuses it.

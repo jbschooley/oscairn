@@ -12,6 +12,15 @@ Checked when built and tested; the sections below say how.
 - [x] 2. `oscairn.assets` and `oscairn.asset-dependencies`, used by the Legacy Sampler; preflight with a missing-asset report
 - [ ] 3. LV2 path mapping onto the store; `create` for user-library files
 - [ ] 4. Libraries as RFC 0006 packages, with redistribution checks and garbage collection
+      (built 2026-11-07: asset packages, kind `asset`, packed by `oscairn-sign asset-package`,
+      each file by path, SHA-256 and size; installed into the asset store by hash with a
+      read-only tree of hard links at `AssetLibraries/<id>/<version>/`, registered under the
+      library's ID, one version at a time, replaced atomically; plugin packages naming the asset
+      libraries they need (`dependencies.assets`), reported when missing from a file and fetched
+      from a repository; the package repository's checks requiring them; `control-archives`,
+      `control-repository`, `package-repository-index`. Not yet: redistribution checks,
+      uninstalling a library and garbage collection of the store, an export carrying a library,
+      an asset package's license texts kept on the device)
 
 ## Outcome
 

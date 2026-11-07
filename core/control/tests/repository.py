@@ -89,21 +89,27 @@ with tempfile.TemporaryDirectory(prefix='oscairn-repository-') as temporary:
     shutil.copytree(builder.parents[1], repo)
     releases = []
 
-    def package(plugin_id, version, platform, requires=None):
-        build = temp / 'builds' / plugin_id / version / platform / 'Synth.clap'
-        build.parent.mkdir(parents=True)
-        shutil.copyfile(fixture, build)
-        run(tool, 'build', temp / 'publisher.key', 'clap', plugin_id, version, platform, build)
+    def package(plugin_id, version, platform, requires=None, needs=None, asset_library=None):
         folder = repo / 'packages' / plugin_id
         folder.mkdir(parents=True, exist_ok=True)
         olib = folder / f'{version}.olib'
-        run(tool, 'plugin-package', '--license', 'MIT', '--key', temp / 'publisher.key', olib, 'clap', plugin_id, version, 'Test Synth', f'{platform}={build}')
+        if asset_library:  # an asset package from that folder
+            run(tool, 'asset-package', '--license', 'MIT', '--key', temp / 'publisher.key', olib, plugin_id, version, 'Test factory content', asset_library)
+        else:
+            build = temp / 'builds' / plugin_id / version / platform / 'Synth.clap'
+            build.parent.mkdir(parents=True)
+            shutil.copyfile(fixture, build)
+            run(tool, 'build', temp / 'publisher.key', 'clap', plugin_id, version, platform, build)
+            depends = ['--asset-dependency', *needs] if needs else []
+            run(tool, 'plugin-package', '--license', 'MIT', *depends, '--key', temp / 'publisher.key', olib, 'clap', plugin_id, version, 'Test Synth', f'{platform}={build}')
         data = olib.read_bytes()
         record = {'format': 'oscairn.repository-release', 'version': 1, 'id': plugin_id, 'release': version, 'publisher': 'org.kick',
-                  'summary': 'A test synth', 'license': 'MIT', 'tags': ['synth'], 'platforms': [platform],
+                  'summary': 'A test synth', 'license': 'MIT', 'tags': ['synth'], 'platforms': [] if asset_library else [platform],
                   'archive': {'path': olib.name, 'sha256': hashlib.sha256(data).hexdigest(), 'size': len(data)}, 'yanked': None}
         if requires:
             record['requires'] = {'oscairn': requires}
+        if needs:
+            record['dependencies'] = {'assets': [{'id': needs[0], 'version': needs[1]}]}
         (folder / f'{version}.json').write_text(json.dumps(record))
         releases.append(olib)
         return olib
@@ -111,6 +117,14 @@ with tempfile.TemporaryDirectory(prefix='oscairn-repository-') as temporary:
     synth = package('org.kick.test.synth', '1.0.0', here)
     package('org.kick.test.synth', '2.0.0', here, requires='99')
     package('org.kick.other', '1.0.0', elsewhere)
+    # An asset library at 1.0.0 and 1.1.0, and a plugin package that needs at least 1.1.0 of it.
+    factory = temp / 'factory'
+    (factory / 'patches').mkdir(parents=True)
+    (factory / 'patches' / 'Lead.fxp').write_bytes(b'a patch')
+    package('org.kick.factory', '1.0.0', here, asset_library=factory)
+    (factory / 'patches' / 'Pad.fxp').write_bytes(b'another patch')
+    package('org.kick.factory', '1.1.0', here, asset_library=factory)
+    package('org.kick.analog', '1.0.0', here, needs=('org.kick.factory', '1.1.0'))
     (temp / 'index-key.pub').write_text(keys['index'][1] + '\n')
     run(tool, 'file', temp / 'root.key', temp / 'index-key.pub', temp / 'index-key.sig')
     config = json.loads((repo / 'repository-config.json').read_text())
@@ -204,7 +218,7 @@ with tempfile.TemporaryDirectory(prefix='oscairn-repository-') as temporary:
             state['log'].clear()
             listing = job('packages.list', {'source': base})
             paths = fetched()
-            check(listing['state'] == 'done' and listing['serial'] == 7 and len(listing['packages']) == 2, 'a repository on the web lists what it offers: ' + listing['error'])
+            check(listing['state'] == 'done' and listing['serial'] == 7 and len(listing['packages']) == 4, 'a repository on the web lists what it offers: ' + listing['error'])
             check(paths[:2] == ['/repository.json', '/repository.sig'] and len(paths) == 3 and paths[2].startswith('/index/') and paths[2].endswith('.json.gz'),
                   'the first refresh fetches the root and the whole index: ' + json.dumps(paths))
             listing = job('packages.list', {'source': base})
@@ -277,7 +291,7 @@ with tempfile.TemporaryDirectory(prefix='oscairn-repository-') as temporary:
         rpc('trust.set', {'key': keys['root'][1], 'name': 'Test repository', 'scope': ['repositories']})
         state = job('packages.list', {'source': str(good)})
         listed = {x['id']: x for x in state['packages']}
-        check(state['state'] == 'done' and state['repository'] == 'org.example.test' and state['serial'] == 7 and set(listed) == {'org.kick.test.synth', 'org.kick.other'},
+        check(state['state'] == 'done' and state['repository'] == 'org.example.test' and state['serial'] == 7 and set(listed) == {'org.kick.test.synth', 'org.kick.other', 'org.kick.factory', 'org.kick.analog'},
               'once trusted, it lists what it offers: ' + json.dumps(state)[:300])
         versions = {v['version']: v for v in listed['org.kick.test.synth']['versions']}
         check(versions['1.0.0']['incompatible'] == '' and versions['1.0.0']['installed'] >= fixture.stat().st_size and 'system update' in versions['2.0.0']['incompatible'],
@@ -349,6 +363,14 @@ with tempfile.TemporaryDirectory(prefix='oscairn-repository-') as temporary:
         installed = rpc('library.install', {'file': str(unpacked)})
         check(installed['code'][0]['status'] == 'trusted' and len(store()) == 1 and leftovers() == [] and unpacked.is_dir() and any(unpacked.rglob('*.clap')),
               'and the unpacked one installs, read in place and left as it was')
+
+        # A plugin package that needs an asset library: installing it from the repository pulls
+        # the newest version of the library that is at least the one it needs (RFC 0009).
+        state = job('packages.install', {'source': str(good), 'id': 'org.kick.analog'})
+        library = home / 'AssetLibraries' / 'org.kick.factory'
+        check(state['state'] == 'done' and state['installed']['notes'] == [] and sorted(e.name for e in library.iterdir()) == ['1.1.0'] and
+              (library / '1.1.0' / 'patches' / 'Pad.fxp').read_bytes() == b'another patch' and any(p['id'] == 'org.kick.analog' for p in store()) and leftovers() == [],
+              'a plugin package installs with the asset library it needs: ' + json.dumps(state)[:400])
     finally:
         p.stdin.close()
         p.wait(timeout=30)

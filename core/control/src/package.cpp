@@ -153,9 +153,18 @@ namespace oscairn
         }
         for(const auto& [path, sha] : package.files) files += std::string(files.empty() ? "" : ",") + detail::quote(path) + ":" + detail::quote(sha);
         const auto source = package.sourceUrl.empty() ? std::string("null") : "{\"url\":" + detail::quote(package.sourceUrl) + ",\"revision\":" + detail::quote(package.sourceRevision) + "}";
+        std::string assets = "null", dependencies;
+        if(package.kind == "asset")
+        {
+            std::string list;
+            for(const auto& a : package.assets)
+                list += std::string(list.empty() ? "" : ",") + "{\"path\":" + detail::quote(a.path) + ",\"sha256\":" + detail::quote(a.sha256) + ",\"size\":" + std::to_string(a.size) + '}';
+            assets = "{\"version\":" + detail::quote(package.assetVersion) + ",\"files\":[" + list + "]}";
+        }
+        for(const auto& d : package.assetDependencies) dependencies += std::string(dependencies.empty() ? "" : ",") + "{\"id\":" + detail::quote(d.id) + ",\"version\":" + detail::quote(d.version) + '}';
         return "{\"format\":\"oscairn.library\",\"version\":3,\"id\":" + detail::quote(package.id) + ",\"name\":" + detail::quote(package.name) +
                ",\"kind\":" + detail::quote(package.kind) + ",\"license\":" + detail::quote(package.license) + ",\"source\":" + source +
-               ",\"items\":[" + items + "],\"plugins\":[" + plugins + "],\"files\":{" + files + "}}\n";
+               ",\"items\":[" + items + "],\"plugins\":[" + plugins + "],\"assets\":" + assets + ",\"dependencies\":{\"assets\":[" + dependencies + "]},\"files\":{" + files + "}}\n";
     }
 
     void writePackage(const fs::path& archive, const Package& package, const fs::path& root, const signing::Key* key)
@@ -322,7 +331,7 @@ namespace oscairn
                 if(!signing::verify(p.signature, signing::archiveMessage(manifest))) bad("its signature does not verify");
             }
             p.id = text(detail::member(d, "id")); p.name = text(detail::member(d, "name")); p.kind = text(detail::member(d, "kind"));
-            if(!plainId(p.id) || (p.kind != "library" && p.kind != "performance" && p.kind != "sound" && p.kind != "plugin")) bad("its ID or kind is wrong");
+            if(!plainId(p.id) || (p.kind != "library" && p.kind != "performance" && p.kind != "sound" && p.kind != "plugin" && p.kind != "asset")) bad("its ID or kind is wrong");
             const V items = detail::member(d, "items");
             if(!items || items->type != json_type_array) bad("it lists no items");
             std::set<std::string> ids;
@@ -380,7 +389,45 @@ namespace oscairn
                     bad("its source is not an https:// address and a commit or tag");
             }
             if(p.license.size() > 256) bad("its license is too long");
-            if(p.kind == "plugin" && p.license.empty()) bad("a plugin package names no license");
+            if((p.kind == "plugin" || p.kind == "asset") && p.license.empty()) bad("a plugin or asset package names no license");
+            // An asset package: its library's version and every file under Assets/, by path, SHA-256 and size.
+            const V assets = detail::member(d, "assets");
+            const bool assetKind = p.kind == "asset";
+            if(assetKind != (assets && assets->type == json_type_object)) bad("an asset package lists its assets, and only an asset package does");
+            if(assetKind)
+            {
+                if(!p.items.empty() || !p.plugins.empty()) bad("an asset package holds assets and no items or plugins");
+                p.assetVersion = text(detail::member(assets, "version"));
+                if(!plainId(p.assetVersion)) bad("an asset package's version is not plain");
+                const V list = detail::member(assets, "files");
+                if(!list || list->type != json_type_array) bad("an asset package lists no files");
+                std::set<std::string> listed;
+                for(auto* e = static_cast<const json_array_s*>(list->payload)->start; e; e = e->next)
+                {
+                    Package::AssetFile a{text(detail::member(e->value, "path")), text(detail::member(e->value, "sha256"))};
+                    const V size = detail::member(e->value, "size");
+                    if(!size || size->type != json_type_number) bad("an asset without its size: " + a.path);
+                    try { a.size = std::stoull(std::string(static_cast<const json_number_s*>(size->payload)->number, static_cast<const json_number_s*>(size->payload)->number_size)); }
+                    catch(const std::exception&) { bad("an asset's size is wrong: " + a.path); }
+                    if(!safe(a.path) || a.sha256.size() != 64 || !listed.insert(a.path).second || !names.count("Assets/" + a.path)) bad("an asset that is not in the archive, or listed twice: " + a.path);
+                    p.assets.push_back(std::move(a));
+                }
+                if(p.assets.empty()) bad("an asset package lists no files");
+                std::set<std::string> folders; // nothing under Assets/ but what it lists and their folders
+                for(const auto& l : listed) for(auto at = l.find('/'); at != std::string::npos; at = l.find('/', at + 1)) folders.insert(l.substr(0, at));
+                for(const auto& n : names)
+                    if(n.rfind("Assets/", 0) == 0 && !listed.count(n.substr(7)) && !folders.count(n.substr(7))) bad("a file under Assets/ the asset package does not list: " + n);
+            }
+            // A plugin package's asset libraries: each by ID and the least version it needs.
+            if(const V dependencies = detail::member(d, "dependencies"); dependencies && dependencies->type == json_type_object)
+                if(const V list = detail::member(dependencies, "assets"); list && list->type == json_type_array)
+                    for(auto* e = static_cast<const json_array_s*>(list->payload)->start; e; e = e->next)
+                    {
+                        Package::Dependency dependency{text(detail::member(e->value, "id")), text(detail::member(e->value, "version"))};
+                        if(!plainId(dependency.id) || !plainId(dependency.version) || p.assetDependencies.size() >= 256) bad("an asset dependency is wrong: " + dependency.id);
+                        p.assetDependencies.push_back(std::move(dependency));
+                    }
+            if(!p.assetDependencies.empty() && p.kind != "plugin") bad("only a plugin package names asset dependencies");
             if(p.kind == "plugin" && copyleft(p.license))
             {
                 const auto texts = names.lower_bound("Licenses/");
@@ -392,6 +439,13 @@ namespace oscairn
             if(!files || files->type != json_type_object) bad("it lists no files");
             for(auto* e = static_cast<const json_object_s*>(files->payload)->start; e; e = e->next)
                 p.files[std::string(e->name->string, e->name->string_size)] = text(e->value);
+            for(const auto& a : p.assets)
+            {
+                const auto listed = p.files.find("Assets/" + a.path);
+                if(listed == p.files.end() || listed->second != a.sha256) bad("an asset that is not what the manifest says: " + a.path);
+                std::error_code e;
+                if(extract && fs::file_size(into / "Assets" / a.path, e) != a.size) bad("an asset that is not the size the manifest says: " + a.path);
+            }
             if(extract)
             {
                 size_t found = 0;

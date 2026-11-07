@@ -188,14 +188,90 @@ namespace oscairn::assets
         return l;
     }
 
-    std::string Store::registerFolder(const fs::path& folder)
+    bool older(const std::string& a, const std::string& b)
+    {
+        auto parts = [](const std::string& v) {
+            std::vector<std::string> out; std::string part;
+            for(const char c : v + ".") if(c == '.' || c == '-' || c == '+') { out.push_back(part); part.clear(); } else part += c;
+            return out;
+        };
+        const auto x = parts(a), y = parts(b);
+        for(size_t i = 0; i < std::max(x.size(), y.size()); ++i)
+        {
+            const auto p = i < x.size() ? x[i] : "0", q = i < y.size() ? y[i] : "0";
+            const bool pn = !p.empty() && std::all_of(p.begin(), p.end(), ::isdigit), qn = !q.empty() && std::all_of(q.begin(), q.end(), ::isdigit);
+            if(pn && qn)
+            {
+                const auto pv = p.find_first_not_of('0') == std::string::npos ? std::string("0") : p.substr(p.find_first_not_of('0'));
+                const auto qv = q.find_first_not_of('0') == std::string::npos ? std::string("0") : q.substr(q.find_first_not_of('0'));
+                if(pv.size() != qv.size()) return pv.size() < qv.size();
+                if(pv != qv) return pv < qv;
+            }
+            else if(pn != qn) return pn; // a number before a word, as the index builder orders them
+            else if(p != q) return p < q;
+        }
+        return false;
+    }
+
+    // AssetLibraries/<id>/<version>/: one version folder per library; others are partial or going.
+    std::string Store::libraryVersion(const std::string& id) const
+    {
+        std::error_code e;
+        for(const auto& entry : fs::directory_iterator(root().parent_path() / "AssetLibraries" / id, e))
+            if(entry.is_directory(e) && entry.path().filename().string().front() != '.') return entry.path().filename().string();
+        return {};
+    }
+    std::string Store::libraryRoot(const std::string& id, const std::string& minVersion) const
+    {
+        if(id.empty() || id.find('/') != std::string::npos || id.front() == '.') return {}; // a plain ID, never a path
+        const auto version = libraryVersion(id);
+        if(version.empty() || (!minVersion.empty() && older(version, minVersion))) return {};
+        return (root().parent_path() / "AssetLibraries" / id / version).string();
+    }
+    void Store::installLibrary(const std::string& id, const std::string& version, const std::string& name, const std::vector<LibraryFile>& files)
+    {
+        const auto store = root() / "store", folder = root().parent_path() / "AssetLibraries" / id;
+        const auto partial = folder / ("." + version + ".partial");
+        std::error_code e;
+        fs::remove_all(partial, e);
+        for(const auto& f : files)
+        {
+            checkRelative(f.path);
+            const auto kept = store / f.sha256;
+            if(!fs::exists(kept))
+            {
+                fs::create_directories(store);
+                const auto incoming = store / ("." + f.sha256 + ".partial");
+                fs::rename(f.from, incoming, e);
+                if(e) { e.clear(); fs::copy_file(f.from, incoming, fs::copy_options::overwrite_existing); }
+                fs::permissions(incoming, fs::perms::owner_read | fs::perms::group_read | fs::perms::others_read);
+                fs::rename(incoming, kept);
+            }
+            const auto to = partial / f.path;
+            fs::create_directories(to.parent_path());
+            fs::create_hard_link(kept, to, e);
+            if(e) { e.clear(); fs::copy_file(kept, to); fs::permissions(to, fs::perms::owner_read | fs::perms::group_read | fs::perms::others_read); } // another file system: a copy
+        }
+        fs::create_directories(partial);
+        // The new tree into place, then the old one out: a reader sees one whole version or the other.
+        std::vector<fs::path> old;
+        for(const auto& entry : fs::directory_iterator(folder))
+            if(entry.is_directory() && entry.path().filename().string().front() != '.') old.push_back(entry.path());
+        for(auto& o : old) { const auto going = folder / ("." + o.filename().string() + ".going"); fs::remove_all(going, e); fs::rename(o, going); o = going; }
+        fs::rename(partial, folder / version);
+        for(const auto& o : old) fs::remove_all(o, e);
+        registerFolder(folder / version, id);
+        if(!name.empty()) { std::lock_guard lock(mutex_); RegistryLock registry(root()); loaded_ = false; load(); libraries_[id].name = name; save(); }
+    }
+
+    std::string Store::registerFolder(const fs::path& folder, const std::string& given)
     {
         std::lock_guard lock(mutex_); RegistryLock registry(root()); loaded_ = false; load();
         std::error_code ec; const auto path = fs::canonical(folder, ec);
         if(ec || !fs::is_directory(path)) fail("folder not found: " + folder.string());
         if(!plain(path.string())) fail("folder path contains tabs or line breaks: " + path.string());
-        std::string id;
-        for(const auto& [existing, l] : libraries_) if(l.path == path.string()) id = existing;
+        std::string id = given;
+        if(id.empty()) for(const auto& [existing, l] : libraries_) if(l.path == path.string()) id = existing;
         if(id.empty()) id = randomId();
         // Hash every regular file now so later loads only check sizes and times. Links are skipped.
         auto& entries = index(id); Index fresh; size_t files = 0;

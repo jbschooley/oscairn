@@ -35,14 +35,16 @@ jobs:
           repository: ${{ env.OSCAIRN_REPOSITORY }}
           commit: ${{ env.OSCAIRN_COMMIT }}
 
-      - name: Schema, archive safety, signatures, platform builds, libraries and immutable versions
+      - name: Schema, archive safety, signatures, platform builds, libraries, dependencies and immutable versions
         # Every record's schema; each archive fetched and checked against its SHA-256; archive
         # safety and every signature through `oscairn-sign verify`; the archive and every build
         # signed by the publisher's key; each claimed platform's build present; no build loading
         # a library from outside the system and its bundle (read from its Mach-O or ELF files by
         # `oscairn-sign verify`); the record's license and source the archive's own (a GPL,
         # LGPL or AGPL plugin package without its source or license texts is refused by
-        # `oscairn-sign verify`); no published release or publisher key changed.
+        # `oscairn-sign verify`); the record's dependencies the archive's, and each asset library
+        # a release needs an asset package in this repository or this pull request at that
+        # version or later; no published release or publisher key changed.
         run: >
           python3 -I .base/scripts/build-index.py --check
           --oscairn-sign "${{ steps.tools.outputs.path }}"
@@ -63,9 +65,6 @@ jobs:
 
       - name: Validation (not built yet)
         run: echo "::warning::Not built yet. Will run the developer kit's conformance and realtime-safety tests, as warnings at first."
-
-      - name: Dependencies (not built yet)
-        run: echo "::warning::Not built yet. Will check that every required package and version is in this repository or this pull request."
 
       - name: Scanning (not built yet)
         run: echo "::warning::Not built yet. Will scan every file with a malware scanner's signatures."

@@ -193,30 +193,7 @@ namespace oscairn::repository
 
     std::string blobPath(const std::string& sha256) { return "blobs/" + sha256.substr(0, 2) + "/" + sha256; }
 
-    bool older(const std::string& a, const std::string& b)
-    {
-        auto parts = [](const std::string& v) {
-            std::vector<std::string> out; std::string part;
-            for(const char c : v + ".") if(c == '.' || c == '-' || c == '+') { out.push_back(part); part.clear(); } else part += c;
-            return out;
-        };
-        const auto x = parts(a), y = parts(b);
-        for(size_t i = 0; i < std::max(x.size(), y.size()); ++i)
-        {
-            const auto p = i < x.size() ? x[i] : "0", q = i < y.size() ? y[i] : "0";
-            const bool pn = !p.empty() && std::all_of(p.begin(), p.end(), ::isdigit), qn = !q.empty() && std::all_of(q.begin(), q.end(), ::isdigit);
-            if(pn && qn)
-            {
-                const auto pv = p.find_first_not_of('0') == std::string::npos ? std::string("0") : p.substr(p.find_first_not_of('0'));
-                const auto qv = q.find_first_not_of('0') == std::string::npos ? std::string("0") : q.substr(q.find_first_not_of('0'));
-                if(pv.size() != qv.size()) return pv.size() < qv.size();
-                if(pv != qv) return pv < qv;
-            }
-            else if(pn != qn) return pn; // a number before a word, as the index builder orders them
-            else if(p != q) return p < q;
-        }
-        return false;
-    }
+    bool older(const std::string& a, const std::string& b) { return assets::older(a, b); } // asset libraries' minimum versions compare the same way
 
     std::string incompatible(const Version& v, const std::string& system, const std::string& platform)
     {

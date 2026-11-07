@@ -1137,6 +1137,9 @@ or a plugin package (`kind` `plugin`: plugin builds and no items).
 - `packages.list` takes `{source}` and `packages.install` takes `{source,id}` and optional
   `version` and `acceptUnsignedCode`; each returns `{job}` at once and goes on in the engine,
   off its control thread ([RFC 0031](rfcs/0031-package-repository-and-distribution.md)).
+  A plugin package that needs asset libraries brings, from the same repository, the newest
+  stable version of each this device lacks (or has older than it needs), installed first; the
+  job fails when the repository has none ([asset packages](library-archive.md#asset-packages)).
   `source` is a folder holding a package repository, or its `https://` (or `http://`) address:
   `repository.json`, `repository.sig`, `index/` and the package files under
   `blobs/<first two hex digits>/<sha256>`, as the

@@ -9,7 +9,7 @@ A library, an exported Performance or Sound, or a plugin package is one archive 
 | `library.sig` | Optional: the whole archive's signature, `{key, signature}` over `oscairn-archive-1\0` and the manifest's exact bytes ([signatures](#signatures)) |
 | `Performances/<folder>/` | Each Performance as the library keeps it: `performance.json` ([format](performance-format.md)) and `nodes/` |
 | `Sounds/<folder>/` | Each Sound the same way, `sound.json` and `nodes/` |
-| `Assets/<first 16 hex digits of the SHA-256>/<file>` | Each sample the items' plugins use, once |
+| `Assets/<first 16 hex digits of the SHA-256>/<file>` | Each sample the items' plugins use, once; in an [asset package](#asset-packages), `Assets/<path>`, the library's files at their paths |
 | `Plugins/<format>/<id>@<version>/<platform>/<bundle>` | Each plugin build the items use ([RFC 0006](rfcs/0006-packages-and-portability.md)), a file or a bundle folder as installed; characters other than letters, digits, `.`, `-`, `@` and `_` in the ID and version are `_` |
 | `Licenses/<file>` | Its license texts and notices ([license and source](#license-and-source)) |
 
@@ -20,7 +20,9 @@ The manifest:
 | `format`, `version` | Exactly `oscairn.library` and integer `3` |
 | `id` | The library's ID: its folder's name when installed as a library, and what imported copies record as their `origin`; 1 to 64 letters, digits, `.`, `-` and `_`, the first one a letter or digit and the last not a `.` |
 | `name` | Its name |
-| `kind` | `library`, `performance` for an exported Performance, `sound` for an exported Sound (its ID and name are that item's), or `plugin` for a [plugin package](#plugin-packages): plugin builds and no items. Any other kind is refused |
+| `kind` | `library`, `performance` for an exported Performance, `sound` for an exported Sound (its ID and name are that item's), `plugin` for a [plugin package](#plugin-packages): plugin builds and no items, or `asset` for an [asset package](#asset-packages). Any other kind is refused |
+| `assets` | An asset package's library: its `version` and `files` ([asset packages](#asset-packages)); `null` for every other kind |
+| `dependencies` | `{"assets": [...]}`: the asset libraries a plugin package needs, each `{id, version}`, the least version; empty for every other kind |
 | `license` | Its license, an SPDX expression (at most 256 bytes); empty when it names none. A plugin package names one |
 | `source` | `null`, or where its source is: `{url, revision}`, an `https://` address and the exact commit or tag (at most 2048 and 128 bytes, no spaces or control characters) |
 | `items` | Each item's `kind` (`performance` or `sound`), `id` (as plain as the library's: an exported item's ID is its archive's), `name`, `path`, its folder in the archive, and `signatures` (optional) |
@@ -111,6 +113,42 @@ kind of their own, `app`, with an `apps` list beside `plugins`, each app signed 
 [RFC 0006](rfcs/0006-packages-and-portability.md#signatures) describes. Not built: a reader
 refuses the kind until then.
 
+## Asset packages
+
+An asset package carries an asset library ([RFC 0009](rfcs/0009-sound-assets-and-dependencies.md)):
+files plugins read, such as a synth's factory patches and wavetables, and nothing else. `kind`
+is `asset`, `items` and `plugins` are empty, its `id` is the library's ID, it names a `license`,
+and the manifest's `assets` gives the library's `version` (a plain name, as an ID is) and each
+file under `Assets/` by its `path` there, `sha256` and `size`:
+
+```json
+"assets": {"version": "1.9.0", "files": [{"path": "wavetables/basic.wt", "sha256": "<64 hex digits>", "size": 16384}]}
+```
+
+Every other kind has `"assets": null`. `oscairn-sign asset-package` packs every file in a
+folder, hidden ones aside:
+
+```sh
+oscairn-sign asset-package --key author.key --license GPL-3.0-or-later --license-file NOTICE \
+    --license-file AUTHORS Factory.olib org.oscairn.analog-factory 1.9.0 "Analog factory content" factory/
+```
+
+Installing one keeps each file once, by its SHA-256, in the asset store (`assets/store/<sha256>`
+in the data folder), and builds a real folder of the library from it,
+`AssetLibraries/<id>/<version>/<path>`: hard links to the stored files (a copy where a link
+cannot be made), read-only, registered as the library `<id>` so references resolve by its ID and
+path. Preset discovery crawls folders, so a library needs that tree. One version of a library is
+installed at a time: a new one is built beside the old one, moved into place, and the old one
+removed.
+
+**Dependencies.** A plugin package names the asset libraries it needs, each by ID and the least
+version, in `dependencies.assets` (every kind has `"dependencies": {"assets": [...]}`; only a
+plugin package's may list any), packed with `oscairn-sign plugin-package --asset-dependency
+<id> <version>`. Installed from a file, a plugin package whose library is missing, or older,
+says so in its notes. Installed from a package repository, it brings the newest stable version of
+each it lacks that is at least the one named, from the same repository, installed first; the
+install fails when the repository has none.
+
 ## License and source
 
 A package carries its license texts and notices under `Licenses/` (`COPYING`, `NOTICE`,
@@ -141,6 +179,11 @@ nothing behind:
   `Licenses/`;
 - a plugin package naming no license, or under the GPL, LGPL or AGPL without its `source` or a
   file under `Licenses/`, and a `source` that is not an `https://` address and a revision;
+- an asset package naming no license, with items or plugins, whose version is not plain, that
+  lists no file, a file twice, one whose path is not safe or that is not under `Assets/`, or
+  holds a file under `Assets/` it does not list; a file whose SHA-256 or size is not the one it
+  lists; `assets` in any other kind; and asset dependencies anywhere but in a plugin package, or
+  whose ID or version is not plain;
 - a path that is absolute, climbs out (`..`), names a drive (`:`), uses a backslash, is hidden
   (a component starting with `.`), has a control character, or is longer than 1024 bytes;
 - a link, or an entry twice;

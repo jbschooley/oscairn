@@ -1909,7 +1909,18 @@ Control::Installed Session::installUnpacked(const Package& p,const fs::path& int
         for(const auto& id:chosen)if(std::none_of(p.items.begin(),p.items.end(),[&](const auto& i){return i.id==id;}))bad("no item "+id+" in that archive");
         for(const auto& i:p.items)if(chosen.empty() || std::find(chosen.begin(),chosen.end(),i.id)!=chosen.end())items.push_back(i);
         const bool pluginPackage=p.kind=="plugin"; // its plugins and nothing else, whatever asLibrary says
-        if(pluginPackage)asLibrary=false;
+        if(pluginPackage || p.kind=="asset")asLibrary=false;
+        // An asset package: its library into the asset store by hash, and its tree (RFC 0009).
+        if(p.kind=="asset"){
+            std::vector<assets::Store::LibraryFile> files;
+            for(const auto& a:p.assets)files.push_back({a.path,a.sha256,into/"Assets"/a.path});
+            assets_.installLibrary(p.id,p.assetVersion,p.name,files);
+            out.added=uint32_t(files.size());
+        }
+        // A plugin package's asset libraries: each one missing, or older than it needs, is said.
+        for(const auto& d:p.assetDependencies)
+            if(assets_.libraryRoot(d.id,d.version).empty())
+                out.notes.push_back(p.name+" needs the asset library "+d.id+" "+d.version+" or later, which is not installed"+(assets_.libraryVersion(d.id).empty()?"":" (this device has "+assets_.libraryVersion(d.id)+")"));
         // On a case-insensitive file system an ID differing only in case names another library's
         // folder: never two libraries in one, which rescan would list as neither.
         if(asLibrary){std::error_code e;for(const auto& entry:fs::directory_iterator(l.libraries(),e))

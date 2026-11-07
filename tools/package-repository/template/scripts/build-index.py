@@ -195,6 +195,8 @@ def facts(archive):
         types[kind] = types.get(kind, 0) + 1
     for plugin in manifest["plugins"]:
         types[plugin["format"]] = types.get(plugin["format"], 0) + 1
+    if manifest["kind"] == "asset":
+        types["oscairn.asset"] = 1
     return manifest, {"sha256": sha256(manifest_bytes), "size": len(manifest_bytes)}, types, platforms, common
 
 
@@ -267,9 +269,14 @@ def read_release(path, root, publishers, tool, cache, problems):
         problems.add(path, "`source` is not {\"url\", \"revision\"}")
     elif source != contents.get("source"):
         problems.add(path, f"`source` is not the archive's ({json.dumps(contents.get('source'))})")
+    # The asset libraries it needs, as the archive names them; each is checked against the repository in main().
+    needs = contents.get("dependencies", {}).get("assets", [])
+    if r.get("dependencies", {"assets": []}) != {"assets": needs} and not (needs == [] and "dependencies" not in r):
+        problems.add(path, f"`dependencies` is not the archive's ({json.dumps({'assets': needs})})")
     if len(problems) > before:
         return None
     r["name"] = contents["name"]
+    r["_kind"], r["_needs"] = contents["kind"], needs
     return r, {
         "version": release,
         "channel": r.get("channel", "stable"),
@@ -396,6 +403,13 @@ def main():
         owners = {r["publisher"] for r, _ in releases}
         if len(owners) > 1:
             problems.add(f"packages/{pid}", f"a package keeps its publisher; these releases name {sorted(owners)}")
+    # Dependencies: every asset library a release needs is an asset package here, at the version it needs or later.
+    for pid, releases in sorted(packages.items()):
+        for r, _ in releases:
+            for need in r["_needs"]:
+                have = [x for x, _ in packages.get(need.get("id"), []) if x["_kind"] == "asset" and x.get("yanked") is None]
+                if not any(version_key(x["release"]) >= version_key(need.get("version", "")) for x in have):
+                    problems.add(f"packages/{pid}/{r['release']}.json", f"needs the asset library {need.get('id')} {need.get('version')} or later, which this repository does not have")
 
     revoked = load(root / "revoked.json", problems)
     if revoked is not None and check_format(revoked, "oscairn.repository-revocations", "revoked.json", problems):

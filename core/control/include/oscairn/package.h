@@ -25,7 +25,8 @@ namespace oscairn
         struct Plugin { std::string format, id, version, name; std::vector<Build> builds; };
         std::string id, name;
         // "library"; "performance" or "sound" for an exported item; "plugin" for a plugin package,
-        // which holds plugin builds and no items. Apps are to be another kind, with their own list.
+        // which holds plugin builds and no items; "asset" for an asset package, which holds an
+        // asset library and nothing else. Apps are to be another kind, with their own list.
         std::string kind = "library";
         std::vector<Item> items;
         std::vector<Plugin> plugins;
@@ -33,6 +34,14 @@ namespace oscairn
         // commit or tag. A plugin package needs a license, and one under the GPL, LGPL or AGPL
         // needs the source and its license texts and notices under Licenses/ (their §6).
         std::string license, sourceUrl, sourceRevision;
+        // An asset package (kind "asset", RFC 0009): an asset library whose ID is the package's,
+        // its version, and each file under Assets/ by its path there, SHA-256 and size.
+        struct AssetFile { std::string path, sha256; uint64_t size = 0; };
+        std::string assetVersion;
+        std::vector<AssetFile> assets;
+        // A plugin package's asset libraries, each by ID and the least version it needs.
+        struct Dependency { std::string id, version; };
+        std::vector<Dependency> assetDependencies;
         std::map<std::string, std::string> files; // each file's SHA-256 by its path; filled by writePackage
         signing::Signature signature;              // library.sig, the whole archive's over the manifest; an empty key for none
         std::string manifestSha256;                // the manifest's, as read: a package's identity (RFC 0006)
@@ -88,7 +97,10 @@ namespace oscairn
     // files in it are skipped), read by the same rules. Nothing is written unless `into`'s file
     // system has room for every entry and the largest once more.
     // Untrusted input: refuses entries outside library.json, Performances/, Sounds/, Assets/,
-    // Plugins/ and Licenses/, a plugin package without a license, or under the GPL, LGPL or AGPL
+    // Plugins/ and Licenses/, an asset package with items or plugins, without a license or a
+    // version, with no files, a file listed twice or not plain, not in the archive, not the size
+    // or SHA-256 it lists, or a file under Assets/ it does not list; asset dependencies anywhere
+    // but in a plugin package, or not plain; a plugin package without a license, or under the GPL, LGPL or AGPL
     // without its source (an https:// URL and a commit or tag) and a file under Licenses/, paths that climb out or are absolute, links, duplicates, more than 1,048,576 entries
     // or 64 MiB of names, more than 8 GiB in all, an entry over 2 GiB or a manifest over maxManifestBytes (as declared; each file extracted must be the
     // size it declares), a file whose SHA-256 is not the manifest's or that the manifest does not

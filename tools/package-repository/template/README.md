@@ -40,6 +40,14 @@ You need `oscairn-sign`, built with Oscairn (`cmake --build build --target oscai
    must also name its source, the exact commit or tag (`--source <url> <revision>`), or it is
    refused: that is the license's "directions next to the object code".
 
+   An asset library (samples, patches, wavetables a plugin reads) is its own package, packed
+   from a folder; a plugin package that needs it names it with `--asset-dependency`:
+
+   ```sh
+   oscairn-sign asset-package --key ~/oscairn/publisher.key --license GPL-3.0-or-later --license-file NOTICE \
+       com.example.factory-1.0.olib com.example.factory 1.0 "Example factory content" factory/
+   ```
+
    A bundle holding several plugins is signed for each of them at once and packed once, each
    plugin named with `--plugin` (a preset-discovery provider in it is not listed or signed):
 
@@ -112,7 +120,10 @@ publisher's ID:
 - `source`: the archive's own `source`, exactly (`url` and the commit or tag as `revision`);
   leave it out, or `null`, only when the archive names none. A GPL, LGPL or AGPL plugin
   package always names one.
-
+- `dependencies`: `{"assets": [{"id", "version"}]}`, the asset libraries the archive needs
+  (`oscairn-sign plugin-package --asset-dependency <id> <least version>`), exactly as the
+  archive names them; leave it out when it needs none. Each must be an asset package in this
+  repository, or in the same pull request, at that version or later.
 - `archive`: an `https://` `url`, or a `path` naming the archive beside this file; its SHA-256
   and size in bytes. Under 1,900 MiB, since release assets must be under 2 GiB.
 - `platforms`: each platform the package has plugin builds for; every plugin must have a build
@@ -134,7 +145,8 @@ with a `reason`. Maintainers change it, following the takedown policy.
 hash, archive safety and every signature through `oscairn-sign verify`, the archive and every
 build signed by the publisher's key, each claimed platform's build, that no build loads a
 library from outside the system and its bundle (a Homebrew library, say), that the record's
-`license` and `source` are the archive's, that a package keeps the
+`license`, `source` and `dependencies` are the archive's, that each asset library a release
+needs is here at that version or later, that a package keeps the
 publisher of its other releases and that publisher IDs do not nest, and no published version or
 publisher key changed. Each check RFC 0031 lists that is not built yet is its own step that says
 so with a warning. Changes outside `publishers/`, `packages/` and `revoked.json` need a

@@ -5,6 +5,7 @@
 // package (refusing a build that loads libraries from outside the system and its bundle), signs
 // an archive whole, checks an archive's signatures and its builds' libraries, and signs and
 // checks a repository's files (RFC 0031). A private key is never printed.
+#include "oscairn/assets.h"
 #include "oscairn/package.h"
 #include "oscairn/signing.h"
 #include <algorithm>
@@ -32,6 +33,7 @@ namespace
                    "      sign an archive whole (library.sig), replacing any signature over it\n"
                    "  oscairn-sign plugin-package [--key <key-file>] [--plugin <id> <name>]... [--allow-outside-libraries]\n"
                    "                             --license <spdx> [--license-file <file>]... [--source <url> <commit-or-tag>]\n"
+                   "                             [--asset-dependency <library-id> <least-version>]...\n"
                    "                             <archive.olib> <format> <id> <version> <name> <platform>=<build>...\n"
                    "      pack plugin builds, each with the signatures in <build>.sig beside it, into a\n"
                    "      plugin package (an archive with no items) with that ID and name; with --key,\n"
@@ -41,7 +43,12 @@ namespace
                    "      --allow-outside-libraries, which says what it packed anyway. Its license (an SPDX\n"
                    "      expression), license texts and notices (into Licenses/) and source (an https://\n"
                    "      address and the exact commit or tag) travel in it; under the GPL, LGPL or AGPL\n"
-                   "      the source and a license file are required\n"
+                   "      the source and a license file are required. --asset-dependency names an asset\n"
+                   "      library it needs, and the least version\n"
+                   "  oscairn-sign asset-package [--key <key-file>] --license <spdx> [--license-file <file>]...\n"
+                   "                            [--source <url> <commit-or-tag>] <archive.olib> <library-id> <version> <name> <folder>\n"
+                   "      pack every file in <folder> (hidden ones aside) as an asset library, each by its\n"
+                   "      path, SHA-256 and size, into an asset package; with --key, signed whole\n"
                    "  oscairn-sign verify [--into <folder>] <archive.olib>\n"
                    "      check every signature and hash in an archive and say who signed what, and each\n"
                    "      build's libraries from outside the system and its bundle (lines \"outside ...\");\n"
@@ -135,6 +142,7 @@ int main(int argc, char** argv)
                 else if(rest[0] == "--license" && rest.size() > 1) { p.license = rest[1]; rest.erase(rest.begin(), rest.begin() + 2); }
                 else if(rest[0] == "--license-file" && rest.size() > 1) { licenseFiles.push_back(rest[1]); rest.erase(rest.begin(), rest.begin() + 2); }
                 else if(rest[0] == "--source" && rest.size() > 2) { p.sourceUrl = rest[1]; p.sourceRevision = rest[2]; rest.erase(rest.begin(), rest.begin() + 3); }
+                else if(rest[0] == "--asset-dependency" && rest.size() > 2) { p.assetDependencies.push_back({rest[1], rest[2]}); rest.erase(rest.begin(), rest.begin() + 3); }
                 else return usage();
             }
             if(rest.size() < 6) return usage();
@@ -189,6 +197,47 @@ int main(int argc, char** argv)
             std::printf("packed %s %s %s with %zu builds%s\n", format.c_str(), ids.c_str(), version.c_str(), p.plugins[0].builds.size(),
                         key ? (", signed by " + signing::keyId(key->publicKey)).c_str() : "");
             for(const auto& o : outside) std::printf("packed with --allow-outside-libraries, loading from outside the system and its bundle: %s\n", o.c_str());
+            return 0;
+        }
+        if(a.size() >= 6 && a[0] == "asset-package")
+        {
+            std::vector<std::string> rest(a.begin() + 1, a.end());
+            std::unique_ptr<signing::Key> key;
+            Package p;
+            std::vector<fs::path> licenseFiles;
+            while(!rest.empty() && rest[0].rfind("--", 0) == 0)
+            {
+                if(rest[0] == "--key" && rest.size() > 1) { key = std::make_unique<signing::Key>(signing::loadKey(rest[1])); rest.erase(rest.begin(), rest.begin() + 2); }
+                else if(rest[0] == "--license" && rest.size() > 1) { p.license = rest[1]; rest.erase(rest.begin(), rest.begin() + 2); }
+                else if(rest[0] == "--license-file" && rest.size() > 1) { licenseFiles.push_back(rest[1]); rest.erase(rest.begin(), rest.begin() + 2); }
+                else if(rest[0] == "--source" && rest.size() > 2) { p.sourceUrl = rest[1]; p.sourceRevision = rest[2]; rest.erase(rest.begin(), rest.begin() + 3); }
+                else return usage();
+            }
+            if(rest.size() != 5) return usage();
+            p.kind = "asset"; p.id = rest[1]; p.assetVersion = rest[2]; p.name = rest[3];
+            const fs::path folder = rest[4];
+            if(!fs::is_directory(folder)) throw std::runtime_error("no folder " + folder.string());
+            std::random_device random;
+            const auto staged = fs::temp_directory_path() / ("oscairn-pack-" + std::to_string(random()) + std::to_string(random()));
+            struct Gone { fs::path p; ~Gone() { std::error_code e; fs::remove_all(p, e); } } gone{staged};
+            // Every file in the folder (hidden ones aside), at its path there, with its SHA-256 and size.
+            for(auto it = fs::recursive_directory_iterator(folder); it != fs::recursive_directory_iterator(); ++it)
+            {
+                const auto relative = fs::relative(it->path(), folder);
+                if(relative.filename().string().front() == '.') { it.disable_recursion_pending(); continue; }
+                if(it->is_symlink()) throw std::runtime_error("a link in the library: " + it->path().string());
+                if(!it->is_regular_file()) continue;
+                const auto to = staged / "Assets" / relative;
+                fs::create_directories(to.parent_path());
+                fs::copy_file(it->path(), to);
+                p.assets.push_back({relative.generic_string(), assets::sha256File(to), fs::file_size(to)});
+            }
+            std::sort(p.assets.begin(), p.assets.end(), [](const auto& x, const auto& y) { return x.path < y.path; });
+            stageLicenses(licenseFiles, staged);
+            writePackage(rest[0], p, staged, key.get());
+            try { readPackage(rest[0], {}); } catch(...) { fs::remove(rest[0]); throw; } // as a reader takes it
+            std::printf("packed asset library %s %s with %zu files%s\n", p.id.c_str(), p.assetVersion.c_str(), p.assets.size(),
+                        key ? (", signed by " + signing::keyId(key->publicKey)).c_str() : "");
             return 0;
         }
         if(a.size() >= 2 && a[0] == "verify" && (a.size() == 2 || (a.size() == 4 && a[1] == "--into")))
