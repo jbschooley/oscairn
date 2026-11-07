@@ -753,6 +753,29 @@ serial than one it has seen ([freshness](#signatures-and-freshness)).
 | 7. Offline and multi-device | Fetch for a device, USB subsets, a paired computer as source | A desktop queues packages for a KICK profile and writes a USB drive with only its builds; the device installs them; the same through a paired connection |
 | 8. Public | Hosting, CDN, mirrors, the policy, the root key ceremony | The official repository serves from two mirrors, and a device survives one going away |
 
+**Left of steps 1 to 3 (2026-11-06).** Steps 1 and 2 are built in part (see Progress). Step 3
+waits on them. What remains, in order:
+
+1. Releases stored in pieces: the index builder splits each archive into its manifest, each
+   item folder as a zip, each sample and each plugin build as blobs, and a device fetches only
+   the items chosen, the samples it lacks and its own platform's builds, unzipping each as it
+   streams, so peak storage is the installed size plus one entry from the web too.
+2. HTTPS on Linux devices: a TLS library in the image (libcurl with OpenSSL or mbedTLS) and
+   `JUCE_USE_CURL` on, or a transport over that library directly. The core's `Transport` takes
+   either without change.
+3. A device's list of repositories (`packages.repositories`, `addRepository`,
+   `removeRepository`, `.orepo` files), each installed package recording its repository, the
+   root fetched from a mirror when the repository's own address is down, and the desktop
+   installing from an address.
+4. Tests for the free-space refusal and a drive pulled midway.
+5. Step 3's `oscairn publish`: pack (or take) the release, run the checks the submissions
+   repository's `check.yml` runs (`build-index.py --check` with `--previous` against the
+   published tag) locally on a copy of the submissions repository with the new record, sign each
+   build and the archive with the publisher's key, and write the release record
+   (`packages/<id>/<version>.json`) for the pull request. Immutable versions and yanking are
+   already enforced by the index builder; the command adds `oscairn publish --yank <version>
+   <reason>`, which changes only `yanked`.
+
 Steps 1 and 3 need RFC 0006's signatures built. Step 5 needs RFC 0022 step 2 (apps in their own
 processes) for the Store app, and RFC 0023 step 2 for types in queries. Step 4 comes before
 step 8: nothing public without a way to stop it.
