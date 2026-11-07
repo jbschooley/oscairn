@@ -385,7 +385,11 @@ repository of submission records:
 - **A publisher's first submission** also adds `publishers/<publisher>.json`: the publisher's
   ID, name and key. A reverse-DNS publisher ID is verified by a file at
   `https://<domain>/.well-known/oscairn-publisher.json` naming the key, as Flathub verifies
-  app IDs. Later submissions must be signed by that key or one it signed.
+  app IDs: `{"format": "oscairn.publisher-verification", "version": 1, "id", "name", "key"}`,
+  the key as 64 hex digits, the domain the ID's reversed (`org.oscairn` at `oscairn.org`). Only
+  that file needs the ID's own domain; the repository itself is served from anywhere (Oscairn's
+  official one from `packages.oscairn.org`, decided 2026-11-07). Later submissions must be signed
+  by that key or one it signed.
 - **CI** fetches the files, checks every hash against the signed manifest, runs the checks, and
   posts the results on the pull request.
 - **On merge**, CI copies the blobs into storage (unless the package uses its own blob base),
