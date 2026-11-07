@@ -14,7 +14,8 @@ Checked when built and tested; the sections below say how.
       panes with a saved arrangement, the inspector and shortcuts remain
 - [ ] 3. Generated editors: parameter pages from module paths, `oscairn.ui` draft hints, panel
       row knobs, the Compact test layout and the gate's checks done (Odin 2 on Desktop, Panel
-      and Compact); the Legacy Sampler has no parameters to edit yet
+      and Compact); the editors for the engine plugins (Oscairn FM, Analog and Sampler) remain,
+      once their engines are done
 - [ ] 4. Plugin windows: built on macOS, from workers, reopened after a restart
       ([status](#step-4-status)); the gate's editing while audio plays, Linux and an engine-placed
       plugin remain
